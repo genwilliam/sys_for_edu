@@ -152,18 +152,28 @@ function remove(row: Student) {
       <UiTable :columns="columns" :data="paged">
         <template #cell-name="{ row }">
           <div class="avatar-cell">
-            <span
-              class="avatar"
+            <button
+              class="avatar avatar-link"
               :class="row.gender === 'female' ? 'avatar--green' : 'avatar--amber'"
+              type="button"
+              :aria-label="`查看学生${row.name}的档案`"
+              @click="store.openProfile('student', row)"
             >
               {{ row.name.charAt(0) }}
-            </span>
+            </button>
             <div>
-              <div class="cell-primary">{{ row.name }}</div>
+              <button
+                class="cell-primary profile-name"
+                type="button"
+                @click="store.openProfile('student', row)"
+              >
+                {{ row.name }}
+              </button>
               <div class="cell-sub">{{ row.guardian }}</div>
             </div>
           </div>
         </template>
+
         <template #cell-status="{ row }">
           <UiTag :tone="statusTone[row.status] ?? 'neutral'" dot>{{ row.status }}</UiTag>
         </template>
@@ -210,3 +220,29 @@ function remove(row: Student) {
     </UiModal>
   </div>
 </template>
+
+<style scoped>
+.avatar-link {
+  cursor: pointer;
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
+}
+
+.avatar-link:hover,
+.avatar-link:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3px var(--brand-100);
+}
+
+.profile-name {
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-name:hover {
+  color: var(--brand-600);
+}
+</style>

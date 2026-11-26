@@ -1,10 +1,13 @@
 import { reactive } from 'vue'
-import type { Toast, User } from '@/types'
+import type { Student, Teacher, Toast, User } from '@/types'
+
+type SelectedProfile = { kind: 'teacher'; person: Teacher } | { kind: 'student'; person: Student }
 
 interface AppState {
   currentPath: string
   isLoggedIn: boolean
   user: User | null
+  profile: SelectedProfile | null
   sidebarCollapsed: boolean
   mobileSidebarOpen: boolean
   toasts: Toast[]
@@ -14,6 +17,7 @@ const state = reactive<AppState>({
   currentPath: '/dashboard',
   isLoggedIn: false,
   user: null,
+  profile: null,
   sidebarCollapsed: false,
   mobileSidebarOpen: false,
   toasts: [],
@@ -24,7 +28,21 @@ let toastId = 0
 export function useAppStore() {
   function navigate(path: string) {
     state.currentPath = path
+    if (!path.startsWith('/teacher/') && !path.startsWith('/student/')) {
+      state.profile = null
+    }
     state.mobileSidebarOpen = false
+  }
+
+  function openProfile(kind: SelectedProfile['kind'], person: Teacher | Student) {
+    if (kind === 'teacher' && 'subject' in person) {
+      state.profile = { kind, person }
+    } else if (kind === 'student' && 'guardian' in person) {
+      state.profile = { kind, person }
+    } else {
+      return
+    }
+    navigate(`/${kind}/${encodeURIComponent(person.id)}`)
   }
 
   function login(username: string) {
@@ -44,6 +62,7 @@ export function useAppStore() {
   function logout() {
     state.isLoggedIn = false
     state.user = null
+    state.profile = null
     state.currentPath = '/dashboard'
   }
 
@@ -65,6 +84,7 @@ export function useAppStore() {
   return {
     state,
     navigate,
+    openProfile,
     login,
     logout,
     toggleSidebar,

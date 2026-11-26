@@ -11,7 +11,7 @@ const store = useAppStore()
 const collapsed = computed(() => store.state.sidebarCollapsed)
 
 function isActive(path: string) {
-  return store.state.currentPath === path
+  return store.state.currentPath === path || store.state.currentPath.startsWith(`${path}/`)
 }
 </script>
 

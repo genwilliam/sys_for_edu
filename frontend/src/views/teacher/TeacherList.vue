@@ -152,11 +152,23 @@ function remove(row: Teacher) {
       <UiTable :columns="columns" :data="paged">
         <template #cell-name="{ row }">
           <div class="avatar-cell">
-            <span class="avatar" :class="row.gender === 'female' ? 'avatar--green' : ''">
+            <button
+              class="avatar avatar-link"
+              :class="row.gender === 'female' ? 'avatar--green' : ''"
+              type="button"
+              :aria-label="`查看教师${row.name}的档案`"
+              @click="store.openProfile('teacher', row)"
+            >
               {{ row.name.charAt(0) }}
-            </span>
+            </button>
             <div>
-              <div class="cell-primary">{{ row.name }}</div>
+              <button
+                class="cell-primary profile-name"
+                type="button"
+                @click="store.openProfile('teacher', row)"
+              >
+                {{ row.name }}
+              </button>
               <div class="cell-sub">{{ row.phone }}</div>
             </div>
           </div>
@@ -226,6 +238,29 @@ function remove(row: Teacher) {
 </template>
 
 <style scoped>
+.avatar-link {
+  cursor: pointer;
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
+}
+
+.avatar-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3px var(--brand-100);
+}
+
+.profile-name {
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-name:hover {
+  color: var(--brand-600);
+}
+
 .rating {
   display: inline-flex;
   align-items: center;

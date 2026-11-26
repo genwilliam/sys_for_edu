@@ -15,6 +15,7 @@ import VisitList from '@/views/visit/VisitList.vue'
 import ReportCenter from '@/views/report/ReportCenter.vue'
 import UserList from '@/views/system/UserList.vue'
 import RoleList from '@/views/system/RoleList.vue'
+import PersonDetail from '@/views/person/PersonDetail.vue'
 
 export interface MenuItem {
   path: string
@@ -96,9 +97,16 @@ for (const group of menuGroups) {
 }
 
 export function getView(path: string): Component {
+  if (/^\/(teacher|student)\/[^/]+$/.test(path)) return PersonDetail
   return viewMap[path] ?? LoginView
 }
 
 export function getMeta(path: string): RouteMeta {
+  if (path.startsWith('/teacher/')) {
+    return { title: '教师档案', group: '教师管理', icon: 'graduation-cap' }
+  }
+  if (path.startsWith('/student/')) {
+    return { title: '学生档案', group: '学生管理', icon: 'users' }
+  }
   return routeMap[path] ?? { title: '未知页面', group: '', icon: 'info' }
 }
