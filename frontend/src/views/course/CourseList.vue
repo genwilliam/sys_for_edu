@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Course } from '@/types'
-import { courses } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Course[]>(JSON.parse(JSON.stringify(courses)) as Course[])
+const list = computed(() => store.state.courses)
 const keyword = ref('')
 const categoryFilter = ref('')
 const page = ref(1)
@@ -78,7 +77,7 @@ const form = ref<Course>({
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `CO${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     category: '英语',
     grade: '小学 1-3 年级',
@@ -97,30 +96,37 @@ function openEdit(row: Course) {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写课程名称', 'warning')
     return
   }
   if (editing.value) {
-    Object.assign(editing.value, form.value, {
-      price: Number(form.value.price) || 0,
-      hours: Number(form.value.hours) || 0,
-    })
+    if (
+      !(await store.updateBusinessRecord('courses', editing.value.id, {
+        ...form.value,
+        price: Number(form.value.price) || 0,
+        hours: Number(form.value.hours) || 0,
+      }))
+    )
+      return
     store.toast('课程信息已更新')
   } else {
-    list.value.unshift({
-      ...form.value,
-      price: Number(form.value.price) || 0,
-      hours: Number(form.value.hours) || 0,
-    })
+    if (
+      !(await store.createBusinessRecord('courses', {
+        ...form.value,
+        price: Number(form.value.price) || 0,
+        hours: Number(form.value.hours) || 0,
+      }))
+    )
+      return
     store.toast('课程创建成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: Course) {
-  list.value = list.value.filter((c) => c.id !== row.id)
+async function remove(row: Course) {
+  if (!(await store.deleteBusinessRecord('courses', row.id))) return
   store.toast('已删除该课程', 'info')
 }
 </script>

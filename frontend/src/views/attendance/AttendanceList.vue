@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Attendance, AttendanceStatus } from '@/types'
-import { attendanceRecords } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -16,7 +15,7 @@ import UiPagination from '@/components/ui/UiPagination.vue'
 
 const store = useAppStore()
 
-const list = ref<Attendance[]>(JSON.parse(JSON.stringify(attendanceRecords)) as Attendance[])
+const list = computed(() => store.state.attendance)
 const keyword = ref('')
 const statusFilter = ref('')
 const page = ref(1)
@@ -70,7 +69,7 @@ const form = ref<Attendance>({
 
 function openCreate() {
   form.value = {
-    id: `A${String(Date.now()).slice(-6)}`,
+    id: '',
     student: '',
     className: '',
     course: '',
@@ -83,12 +82,12 @@ function openCreate() {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.student.trim()) {
     store.toast('请填写学生姓名', 'warning')
     return
   }
-  list.value.unshift({ ...form.value })
+  if (!(await store.createBusinessRecord('attendance', form.value))) return
   modalOpen.value = false
   store.toast('考勤记录已提交')
 }

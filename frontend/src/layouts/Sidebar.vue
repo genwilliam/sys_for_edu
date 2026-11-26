@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { menuGroups } from '@/router'
+import { getMenuGroups } from '@/router'
 import { useAppStore } from '@/stores/app'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
@@ -9,9 +9,10 @@ defineOptions({ name: 'AppSidebar' })
 const store = useAppStore()
 
 const collapsed = computed(() => store.state.sidebarCollapsed)
+const groups = computed(() => getMenuGroups(store.state.user?.role))
 
 function isActive(path: string) {
-  return store.state.currentPath === path
+  return store.state.currentPath === path || store.state.currentPath.startsWith(`${path}/`)
 }
 </script>
 
@@ -28,7 +29,7 @@ function isActive(path: string) {
     </div>
 
     <nav class="sidebar__nav">
-      <div v-for="group in menuGroups" :key="group.label" class="nav-group">
+      <div v-for="group in groups" :key="group.label" class="nav-group">
         <p v-show="!collapsed" class="nav-group__label">{{ group.label }}</p>
         <div v-if="collapsed" class="nav-group__divider" />
         <a

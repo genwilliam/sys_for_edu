@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Classroom } from '@/types'
-import { classrooms } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Classroom[]>(JSON.parse(JSON.stringify(classrooms)) as Classroom[])
+const list = computed(() => store.state.classrooms)
 const keyword = ref('')
 const campusFilter = ref('')
 const page = ref(1)
@@ -76,7 +75,7 @@ const equipmentText = ref('')
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `R${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     campus: '朝阳中心',
     capacity: 20,
@@ -95,7 +94,7 @@ function openEdit(row: Classroom) {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写教室名称', 'warning')
     return
@@ -105,20 +104,31 @@ function save() {
     .map((s) => s.trim())
     .filter(Boolean)
   if (editing.value) {
-    Object.assign(editing.value, form.value, {
-      capacity: Number(form.value.capacity) || 0,
-      equipment,
-    })
+    if (
+      !(await store.updateBusinessRecord('classrooms', editing.value.id, {
+        ...form.value,
+        capacity: Number(form.value.capacity) || 0,
+        equipment,
+      }))
+    )
+      return
     store.toast('教室信息已更新')
   } else {
-    list.value.unshift({ ...form.value, capacity: Number(form.value.capacity) || 0, equipment })
+    if (
+      !(await store.createBusinessRecord('classrooms', {
+        ...form.value,
+        capacity: Number(form.value.capacity) || 0,
+        equipment,
+      }))
+    )
+      return
     store.toast('教室创建成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: Classroom) {
-  list.value = list.value.filter((c) => c.id !== row.id)
+async function remove(row: Classroom) {
+  if (!(await store.deleteBusinessRecord('classrooms', row.id))) return
   store.toast('已删除该教室', 'info')
 }
 </script>

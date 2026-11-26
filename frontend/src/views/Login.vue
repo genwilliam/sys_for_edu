@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { registerAccount } from '@/services/auth'
 import UiIcon from '@/components/ui/UiIcon.vue'
 
 defineOptions({ name: 'LoginView' })
@@ -8,9 +9,15 @@ defineOptions({ name: 'LoginView' })
 const store = useAppStore()
 
 const username = ref('admin')
-const password = ref('123456')
+const password = ref('Admin@123')
 const remember = ref(true)
 const loading = ref(false)
+const mode = ref<'login' | 'register'>('login')
+const registerRole = ref<'TEACHER' | 'STUDENT'>('STUDENT')
+const personId = ref('')
+const phone = ref('')
+const registerUsername = ref('')
+const registerPassword = ref('')
 
 const features = [
   { icon: 'calendar', title: '智能排课', desc: '按教师、教室、课程多维排课，自动检测资源冲突' },
@@ -18,16 +25,44 @@ const features = [
   { icon: 'bar-chart', title: '数据报表', desc: '营收、学员、课消多维度可视化分析' },
 ]
 
-function submit() {
+async function submit() {
   if (!username.value.trim() || !password.value.trim()) {
     store.toast('请输入账号和密码', 'warning')
     return
   }
   loading.value = true
-  setTimeout(() => {
-    store.login(username.value.trim())
-    store.toast('登录成功，欢迎回来！')
-  }, 600)
+  const user = await store.login(username.value.trim(), password.value, remember.value)
+  loading.value = false
+  if (!user) return
+  store.toast('登录成功，欢迎回来！')
+}
+
+async function submitRegistration() {
+  if (!personId.value.trim() || !phone.value.trim() || !registerUsername.value.trim()) {
+    store.toast('请填写档案编号、手机号和登录账号', 'warning')
+    return
+  }
+  loading.value = true
+  try {
+    const result = await registerAccount({
+      role: registerRole.value,
+      personId: personId.value.trim(),
+      phone: phone.value.trim(),
+      username: registerUsername.value.trim(),
+      password: registerPassword.value,
+    })
+    mode.value = 'login'
+    username.value = registerUsername.value.trim()
+    password.value = ''
+    store.toast(
+      result.pendingApproval ? '注册已提交，请等待管理员审核后登录' : '注册成功，请使用新账号登录',
+      'success',
+    )
+  } catch (error) {
+    store.toast(error instanceof Error ? error.message : '注册失败', 'error')
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -59,10 +94,14 @@ function submit() {
 
     <div class="login__panel">
       <div class="login__form-wrap">
-        <h2 class="login__form-title">欢迎登录</h2>
-        <p class="login__form-sub">请输入您的账号信息</p>
+        <h2 class="login__form-title">
+          {{ mode === 'register' ? '注册教师 / 学生账号' : '欢迎登录' }}
+        </h2>
+        <p class="login__form-sub">
+          {{ mode === 'register' ? '使用档案编号与登记手机号验证本人身份' : '请输入您的账号信息' }}
+        </p>
 
-        <form class="login__form" @submit.prevent="submit">
+        <form v-if="mode === 'login'" class="login__form" @submit.prevent="submit">
           <div class="login__field">
             <label class="login__label">账号</label>
             <div class="login__input">
@@ -90,11 +129,74 @@ function submit() {
           <button class="login__submit" type="submit" :disabled="loading">
             {{ loading ? '登录中…' : '登 录' }}
           </button>
+          <button class="login__secondary" type="button" @click="mode = 'register'">
+            注册教师 / 学生账号
+          </button>
         </form>
 
-        <div class="login__demo">
-          <p>演示账号：<b>admin</b>　密码：<b>123456</b></p>
-          <p class="login__demo-tip">（任意账号密码均可登录体验）</p>
+        <form
+          v-else-if="mode === 'register'"
+          class="login__form"
+          @submit.prevent="submitRegistration"
+        >
+          <div class="login__field">
+            <label class="login__label" for="register-role">账号类型</label>
+            <select id="register-role" v-model="registerRole" class="login__select">
+              <option value="STUDENT">学生</option>
+              <option value="TEACHER">教师（需管理员审核）</option>
+            </select>
+          </div>
+          <div class="login__field">
+            <label class="login__label" for="person-id">学生学号 / 教师编号</label>
+            <div class="login__input">
+              <UiIcon name="id-card" :size="18" />
+              <input id="person-id" v-model="personId" type="text" required />
+            </div>
+          </div>
+          <div class="login__field">
+            <label class="login__label" for="registered-phone">档案登记手机号</label>
+            <div class="login__input">
+              <UiIcon name="phone" :size="18" />
+              <input
+                id="registered-phone"
+                v-model="phone"
+                type="tel"
+                inputmode="numeric"
+                required
+              />
+            </div>
+          </div>
+          <div class="login__field">
+            <label class="login__label" for="register-username">登录账号</label>
+            <div class="login__input">
+              <UiIcon name="user" :size="18" />
+              <input id="register-username" v-model="registerUsername" type="text" required />
+            </div>
+          </div>
+          <div class="login__field">
+            <label class="login__label" for="register-password">密码（至少 8 位）</label>
+            <div class="login__input">
+              <UiIcon name="lock" :size="18" />
+              <input
+                id="register-password"
+                v-model="registerPassword"
+                type="password"
+                minlength="8"
+                required
+              />
+            </div>
+          </div>
+          <button class="login__submit" type="submit" :disabled="loading">
+            {{ loading ? '提交中…' : '注 册' }}
+          </button>
+          <button class="login__secondary" type="button" @click="mode = 'login'">返回登录</button>
+        </form>
+
+        <div v-if="mode === 'login'" class="login__demo">
+          <p><b>本地演示账号</b></p>
+          <p>管理员：admin / Admin@123</p>
+          <p>教师：teacher / Teacher@123</p>
+          <p>学生：student / Student@123</p>
         </div>
       </div>
     </div>
@@ -329,6 +431,24 @@ function submit() {
   cursor: not-allowed;
 }
 
+.login__secondary {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  color: var(--brand-600);
+  font-size: 13px;
+}
+
+.login__select {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  background: #fff;
+  color: var(--gray-800);
+}
+
 .login__demo {
   margin-top: 28px;
   padding: 14px 16px;
@@ -337,6 +457,7 @@ function submit() {
   font-size: 13px;
   color: var(--brand-700);
   text-align: center;
+  line-height: 1.8;
 }
 
 .login__demo-tip {

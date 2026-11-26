@@ -90,6 +90,7 @@ export interface ScheduleItem {
   endTime: string
   type: '常规课' | '试听课' | '补课'
   status: '待上课' | '已上课' | '已取消'
+  studentIds?: string[]
 }
 
 export type AttendanceStatus = '出勤' | '缺勤' | '迟到' | '请假'
@@ -139,6 +140,47 @@ export interface User {
   campus: string
   status: CommonStatus
   lastLogin: string
+}
+
+export type AccountRole = 'ADMIN' | 'TEACHER' | 'STUDENT'
+
+export interface SessionUser {
+  username: string
+  role: AccountRole
+  personId: string | null
+  name: string
+  campus: string
+}
+
+export interface AuthSession {
+  token: string
+  user: SessionUser
+}
+
+export interface AuthAccount {
+  username: string
+  role: AccountRole
+  personId: string | null
+  name: string
+  campus: string
+  status: 'ACTIVE' | 'PENDING' | 'DISABLED'
+  createdAt: string
+}
+
+export interface LeaveRequest {
+  id: string
+  type: 'STUDENT_LEAVE' | 'TEACHER_LEAVE'
+  requesterRole: AccountRole
+  requesterPersonId: string
+  studentId: string | null
+  teacherId: string | null
+  classId: string | null
+  leaveDate: string
+  reason: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  reviewedBy: string | null
+  reviewNote: string | null
+  createdAt: string
 }
 
 export interface Role {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Student } from '@/types'
-import { students } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Student[]>(JSON.parse(JSON.stringify(students)) as Student[])
+const list = computed(() => store.state.students)
 const keyword = ref('')
 const statusFilter = ref('')
 const page = ref(1)
@@ -54,11 +53,23 @@ const statusTone: Record<string, 'success' | 'warning' | 'neutral'> = {
   结业: 'neutral',
 }
 
+function currentClassNames(studentId: string) {
+  return store.state.classGroups
+    .filter((classGroup) => store.studentsInClass(classGroup.id).includes(studentId))
+    .map(({ name }) => name)
+    .join('、')
+}
+
 const filtered = computed(() =>
   list.value.filter((s) => {
     const kw = keyword.value.trim()
+    const classNames = currentClassNames(s.id)
     const matchKw =
-      !kw || s.name.includes(kw) || s.guardian.includes(kw) || s.className.includes(kw)
+      !kw ||
+      s.name.includes(kw) ||
+      s.guardian.includes(kw) ||
+      classNames.includes(kw) ||
+      (!classNames && s.className.includes(kw))
     const matchStatus = !statusFilter.value || s.status === statusFilter.value
     return matchKw && matchStatus
   }),
@@ -66,7 +77,10 @@ const filtered = computed(() =>
 
 const paged = computed(() => {
   const start = (page.value - 1) * pageSize
-  return filtered.value.slice(start, start + pageSize)
+  return filtered.value.slice(start, start + pageSize).map((student) => ({
+    ...student,
+    className: currentClassNames(student.id) || student.className || '未分班',
+  }))
 })
 
 const form = ref<Student>({
@@ -86,7 +100,7 @@ const form = ref<Student>({
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `S${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     gender: 'male',
     age: 8,
@@ -107,23 +121,35 @@ function openEdit(row: Student) {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写学生姓名', 'warning')
     return
   }
   if (editing.value) {
-    Object.assign(editing.value, form.value, { age: Number(form.value.age) || 8 })
+    if (
+      !(await store.updateBusinessRecord('students', editing.value.id, {
+        ...form.value,
+        age: Number(form.value.age) || 8,
+      }))
+    )
+      return
     store.toast('学生信息已更新')
   } else {
-    list.value.unshift({ ...form.value, age: Number(form.value.age) || 8 })
+    if (
+      !(await store.createBusinessRecord('students', {
+        ...form.value,
+        age: Number(form.value.age) || 8,
+      }))
+    )
+      return
     store.toast('学生添加成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: Student) {
-  list.value = list.value.filter((s) => s.id !== row.id)
+async function remove(row: Student) {
+  if (!(await store.deleteBusinessRecord('students', row.id))) return
   store.toast('已移除该学生', 'info')
 }
 </script>
@@ -152,18 +178,28 @@ function remove(row: Student) {
       <UiTable :columns="columns" :data="paged">
         <template #cell-name="{ row }">
           <div class="avatar-cell">
-            <span
-              class="avatar"
+            <button
+              class="avatar avatar-link"
               :class="row.gender === 'female' ? 'avatar--green' : 'avatar--amber'"
+              type="button"
+              :aria-label="`查看学生${row.name}的档案`"
+              @click="store.openProfile('student', row)"
             >
               {{ row.name.charAt(0) }}
-            </span>
+            </button>
             <div>
-              <div class="cell-primary">{{ row.name }}</div>
+              <button
+                class="cell-primary profile-name"
+                type="button"
+                @click="store.openProfile('student', row)"
+              >
+                {{ row.name }}
+              </button>
               <div class="cell-sub">{{ row.guardian }}</div>
             </div>
           </div>
         </template>
+
         <template #cell-status="{ row }">
           <UiTag :tone="statusTone[row.status] ?? 'neutral'" dot>{{ row.status }}</UiTag>
         </template>
@@ -210,3 +246,29 @@ function remove(row: Student) {
     </UiModal>
   </div>
 </template>
+
+<style scoped>
+.avatar-link {
+  cursor: pointer;
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition);
+}
+
+.avatar-link:hover,
+.avatar-link:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3px var(--brand-100);
+}
+
+.profile-name {
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-name:hover {
+  color: var(--brand-600);
+}
+</style>

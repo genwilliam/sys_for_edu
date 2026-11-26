@@ -120,7 +120,7 @@ export const teachers: Teacher[] = [
     phone: '135****6655',
     subject: '英语',
     title: '中级讲师',
-    status: 'inactive',
+    status: 'active',
     joinDate: '2022-01-15',
     rating: 4.5,
     campus: '总部基地',
@@ -165,7 +165,37 @@ export const teachers: Teacher[] = [
     campus: '中关村',
     studentCount: 57,
   },
+  {
+    id: 'T009',
+    name: '刘思远',
+    gender: 'male',
+    phone: '131****1209',
+    subject: '物理',
+    title: '中级讲师',
+    status: 'active',
+    joinDate: '2022-08-15',
+    rating: 4.7,
+    campus: '总部基地',
+    studentCount: 34,
+  },
+  {
+    id: 'T010',
+    name: '许佳宁',
+    gender: 'female',
+    phone: '131****1210',
+    subject: '语文',
+    title: '高级讲师',
+    status: 'active',
+    joinDate: '2021-04-12',
+    rating: 4.8,
+    campus: '朝阳中心',
+    studentCount: 41,
+  },
 ]
+
+for (const teacher of teachers) {
+  teacher.phone = String(13900000000 + Number(teacher.id.slice(1)))
+}
 
 export const students: Student[] = [
   {
@@ -308,8 +338,8 @@ export const classGroups: ClassGroup[] = [
     campus: '朝阳中心',
     course: '英语启蒙',
     teacher: '陈雅婷',
-    studentCount: 16,
-    capacity: 20,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 301',
     status: '开课中',
     schedule: '周六 09:00-10:30',
@@ -321,8 +351,8 @@ export const classGroups: ClassGroup[] = [
     campus: '中关村',
     course: '数学思维',
     teacher: '张伟',
-    studentCount: 22,
-    capacity: 24,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 205',
     status: '开课中',
     schedule: '周日 14:00-16:00',
@@ -334,8 +364,8 @@ export const classGroups: ClassGroup[] = [
     campus: '朝阳中心',
     course: '语文素养',
     teacher: '李娜',
-    studentCount: 18,
-    capacity: 20,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 302',
     status: '开课中',
     schedule: '周六 14:00-15:30',
@@ -347,8 +377,8 @@ export const classGroups: ClassGroup[] = [
     campus: '中关村',
     course: '物理竞赛',
     teacher: '王强',
-    studentCount: 14,
-    capacity: 18,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 201',
     status: '开课中',
     schedule: '周六 16:00-18:00',
@@ -360,11 +390,11 @@ export const classGroups: ClassGroup[] = [
     campus: '总部基地',
     course: '英语提升',
     teacher: '赵晓雪',
-    studentCount: 0,
-    capacity: 20,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 101',
-    status: '未开班',
-    schedule: '待排课',
+    status: '开课中',
+    schedule: '周三 16:00-17:30',
   },
   {
     id: 'K006',
@@ -373,13 +403,94 @@ export const classGroups: ClassGroup[] = [
     campus: '朝阳中心',
     course: '化学实验',
     teacher: '孙浩',
-    studentCount: 12,
-    capacity: 16,
+    studentCount: 30,
+    capacity: 32,
     room: '教室 401',
     status: '开课中',
     schedule: '周日 09:00-11:00',
   },
 ]
+
+const rosterSurnames = [
+  '杨',
+  '黄',
+  '周',
+  '吴',
+  '徐',
+  '孙',
+  '胡',
+  '朱',
+  '高',
+  '林',
+  '何',
+  '郭',
+  '马',
+  '罗',
+  '梁',
+  '宋',
+  '郑',
+  '谢',
+  '韩',
+  '唐',
+]
+const rosterGivenNames = ['思远', '子涵', '佳怡', '浩宇', '欣悦', '明轩', '雨桐', '一诺', '嘉豪']
+const rosteredExistingStudents: Record<string, string[]> = {
+  K001: ['S001'],
+  K002: ['S002'],
+  K003: ['S003'],
+  K004: ['S004'],
+  K005: ['S005'],
+  K006: ['S006'],
+}
+let nextStudentNumber = 11
+
+for (const classGroup of classGroups) {
+  const additionalStudentCount = 30 - (rosteredExistingStudents[classGroup.id]?.length ?? 0)
+  for (let index = 0; index < additionalStudentCount; index += 1) {
+    const number = nextStudentNumber
+    const rosterIndex = number - 11
+    const surname = rosterSurnames[rosterIndex % rosterSurnames.length]
+    const givenName =
+      rosterGivenNames[Math.floor(rosterIndex / rosterSurnames.length) % rosterGivenNames.length]
+    const age = classGroup.grade.startsWith('小学') ? 7 + (rosterIndex % 6) : 13 + (rosterIndex % 3)
+    const enrollDay = String((rosterIndex % 28) + 1).padStart(2, '0')
+
+    students.push({
+      id: `S${String(number).padStart(3, '0')}`,
+      name: `${surname}${givenName}`,
+      gender: rosterIndex % 2 === 0 ? 'female' : 'male',
+      age,
+      phone: `130****${String(1000 + number)}`,
+      guardian: `${surname}先生（家长）`,
+      campus: classGroup.campus,
+      className: classGroup.name,
+      status: '在读',
+      enrollDate: `2024-${String((rosterIndex % 12) + 1).padStart(2, '0')}-${enrollDay}`,
+      courseCount: 1 + (rosterIndex % 3),
+    })
+    nextStudentNumber += 1
+  }
+}
+
+if (students.length < 185) {
+  students.push({
+    id: `S${String(nextStudentNumber).padStart(3, '0')}`,
+    name: '邓嘉宁',
+    gender: 'female',
+    age: 11,
+    phone: '',
+    guardian: '邓先生（家长）',
+    campus: '朝阳中心',
+    className: '待分班',
+    status: '在读',
+    enrollDate: '2024-09-01',
+    courseCount: 1,
+  })
+}
+
+for (const student of students) {
+  student.phone = String(13800000000 + Number(student.id.slice(1)))
+}
 
 export const courses: Course[] = [
   {
@@ -736,6 +847,19 @@ export const scheduleItems: ScheduleItem[] = [
     weekday: '周六',
     startTime: '14:00',
     endTime: '15:30',
+    type: '常规课',
+    status: '待上课',
+  },
+  {
+    id: 'SC018',
+    course: '英语提升',
+    className: '英语提升 C 班',
+    teacher: '赵晓雪',
+    room: '教室 101',
+    campus: '总部基地',
+    weekday: '周三',
+    startTime: '16:00',
+    endTime: '17:30',
     type: '常规课',
     status: '待上课',
   },
