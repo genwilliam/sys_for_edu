@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Visit } from '@/types'
-import { visits } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -16,7 +15,7 @@ import UiPagination from '@/components/ui/UiPagination.vue'
 
 const store = useAppStore()
 
-const list = ref<Visit[]>(JSON.parse(JSON.stringify(visits)) as Visit[])
+const list = computed(() => store.state.visits)
 const keyword = ref('')
 const typeFilter = ref('')
 const page = ref(1)
@@ -76,7 +75,7 @@ const form = ref<Visit>({
 
 function openCreate() {
   form.value = {
-    id: `V${String(Date.now()).slice(-6)}`,
+    id: '',
     student: '',
     type: '电话回访',
     content: '',
@@ -88,12 +87,12 @@ function openCreate() {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.student.trim() || !form.value.content.trim()) {
     store.toast('请填写学员与回访内容', 'warning')
     return
   }
-  list.value.unshift({ ...form.value })
+  if (!(await store.createBusinessRecord('visits', form.value))) return
   modalOpen.value = false
   store.toast('回访记录已保存')
 }

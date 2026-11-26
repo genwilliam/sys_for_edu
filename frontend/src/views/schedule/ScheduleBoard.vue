@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { ScheduleItem, TableColumn } from '@/types'
-import { campuses, classGroups, classrooms, courses, scheduleItems, teachers } from '@/data/mock'
 import {
   autoPlanSchedule,
   cancelScheduleItem,
   createScheduleBatch,
   createScheduleItem,
   getScheduleItems,
+  ScheduleApiError,
   updateScheduleItem,
   type AutoPlanRequest,
   type ScheduleDraft,
@@ -27,6 +27,7 @@ import StatCard from '@/components/StatCard.vue'
 
 const store = useAppStore()
 const list = ref<ScheduleItem[]>([])
+const conflictItems = ref<ScheduleItem[]>([])
 const view = ref('week')
 const modalOpen = ref(false)
 const autoModalOpen = ref(false)
@@ -64,51 +65,101 @@ const statusOptions = [
   { label: '已上课', value: '已上课' },
   { label: '已取消', value: '已取消' },
 ]
-const courseOptions = [
-  ...new Set([...courses.map(({ name }) => name), ...scheduleItems.map(({ course }) => course)]),
-].map((name) => ({ label: name, value: name }))
-const teacherOptions = teachers.map(({ name }) => ({ label: name, value: name }))
-const roomOptions = classrooms.map(({ name }) => ({ label: name, value: name }))
-const campusOptions = campuses.map(({ name }) => {
-  const campusName = name.replace(/^(总校区|海淀校区|丰台校区|通州校区) · /, '')
-  return { label: campusName, value: campusName }
-})
-const classOptions = [
-  ...new Set([
-    ...classGroups.map(({ name }) => name),
-    ...scheduleItems.map(({ className }) => className),
-  ]),
-].map((name) => ({ label: name, value: name }))
+const courseOptions = computed(() =>
+  [
+    ...new Set([
+      ...store.state.courses.map(({ name }) => name),
+      ...conflictItems.value.map(({ course }) => course),
+    ]),
+  ].map((name) => ({ label: name, value: name })),
+)
+const teacherOptions = computed(() =>
+  store.state.teachers.map(({ name }) => ({ label: name, value: name })),
+)
+const roomOptions = computed(() =>
+  store.state.classrooms.map(({ name }) => ({ label: name, value: name })),
+)
+const campusOptions = computed(() =>
+  store.state.campuses.map(({ name }) => {
+    const campusName = name.replace(/^(总校区|海淀校区|丰台校区|通州校区) · /, '')
+    return { label: campusName, value: campusName }
+  }),
+)
+const classOptions = computed(() =>
+  [
+    ...new Set([
+      ...store.state.classGroups.map(({ name }) => name),
+      ...conflictItems.value.map(({ className }) => className),
+    ]),
+  ].map((name) => ({ label: name, value: name })),
+)
 const weekdayOptions = weekDays.map((day) => ({ label: day, value: day }))
+function enrolledStudentIds(className: string): string[] {
+  const classGroup = store.state.classGroups.find((group) => group.name === className)
+  if (!classGroup) return []
+  return store
+    .studentsInClass(classGroup.id)
+    .filter((studentId) =>
+      store.state.students.some((student) => student.id === studentId && student.status === '在读'),
+    )
+}
+const formStudentOptions = computed(() => {
+  const classGroup = store.state.classGroups.find((group) => group.name === form.value.className)
+  return classGroup
+    ? store
+        .studentsInClass(classGroup.id)
+        .map((id) => store.state.students.find((student) => student.id === id))
+        .filter(
+          (student) =>
+            student && (student.status === '在读' || form.value.studentIds.includes(student.id)),
+        )
+        .map((student) => ({ id: student!.id, name: student!.name }))
+    : []
+})
+const autoStudentOptions = computed(() => {
+  const classGroup = store.state.classGroups.find(
+    (group) => group.name === autoForm.value.className,
+  )
+  return classGroup
+    ? store
+        .studentsInClass(classGroup.id)
+        .map((id) => store.state.students.find((student) => student.id === id))
+        .filter((student) => student?.status === '在读')
+        .map((student) => ({ id: student!.id, name: student!.name }))
+    : []
+})
 const visibleTimeSlots = computed(() =>
   [...new Set([...timeSlots, ...list.value.map(({ startTime }) => startTime)])].sort(),
 )
-const blankDraft = (): ScheduleItem => ({
+type ScheduleForm = ScheduleItem & { studentIds: string[] }
+const blankDraft = (): ScheduleForm => ({
   id: '',
-  course: courseOptions[0]?.value ?? '',
+  course: courseOptions.value[0]?.value ?? '',
   className: '',
-  teacher: teacherOptions[0]?.value ?? '',
-  room: roomOptions[0]?.value ?? '',
-  campus: campusOptions[0]?.value ?? '',
+  teacher: teacherOptions.value[0]?.value ?? '',
+  room: roomOptions.value[0]?.value ?? '',
+  campus: campusOptions.value[0]?.value ?? '',
   weekday: weekDays[0] ?? '周一',
   startTime: '09:00',
   endTime: '10:30',
   type: '常规课',
   status: '待上课',
+  studentIds: [],
 })
-const form = ref<ScheduleItem>(blankDraft())
+const form = ref<ScheduleForm>(blankDraft())
 const autoForm = ref<AutoPlanRequest>({
-  course: courseOptions[0]?.value ?? '',
-  className: classOptions[0]?.value ?? '',
-  teacher: teacherOptions[0]?.value ?? '',
-  room: roomOptions[0]?.value ?? '',
-  campus: campusOptions[0]?.value ?? '',
+  course: courseOptions.value[0]?.value ?? '',
+  className: classOptions.value[0]?.value ?? '',
+  teacher: teacherOptions.value[0]?.value ?? '',
+  room: roomOptions.value[0]?.value ?? '',
+  campus: campusOptions.value[0]?.value ?? '',
   weeklySessions: 2,
   durationMinutes: 90,
   weekdays: [...weekDays],
   startTime: '09:00',
   endTime: '19:00',
   type: '常规课',
+  studentIds: enrolledStudentIds(classOptions.value[0]?.value ?? ''),
 })
 const weeklySessionsText = computed({
   get: () => String(autoForm.value.weeklySessions),
@@ -134,21 +185,52 @@ const statusTone: Record<string, 'brand' | 'success' | 'danger'> = {
   已取消: 'danger',
 }
 const conflictedIds = computed(() => {
-  const byTeacher = new Map<string, string[]>()
-  const byRoom = new Map<string, string[]>()
-  for (const item of list.value.filter(({ status }) => status !== '已取消')) {
-    const tKey = `${item.teacher}|${item.weekday}|${item.startTime}`
-    const rKey = `${item.campus}|${item.room}|${item.weekday}|${item.startTime}`
-    byTeacher.set(tKey, [...(byTeacher.get(tKey) ?? []), item.id])
-    byRoom.set(rKey, [...(byRoom.get(rKey) ?? []), item.id])
-  }
   const ids = new Set<string>()
-  for (const arr of [...byTeacher.values(), ...byRoom.values()]) {
-    if (arr.length > 1) arr.forEach((id) => ids.add(id))
+  const activeItems = conflictItems.value.filter(({ status }) => status !== '已取消')
+  for (let first = 0; first < activeItems.length; first += 1) {
+    for (let second = first + 1; second < activeItems.length; second += 1) {
+      const a = activeItems[first]!
+      const b = activeItems[second]!
+      if (
+        a.weekday !== b.weekday ||
+        !timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)
+      ) {
+        continue
+      }
+      const sharesStudent = scheduleStudentIds(a).some((id) => scheduleStudentIds(b).includes(id))
+      const sharesRoom = a.campus === b.campus && a.room === b.room
+      if (a.teacher === b.teacher || sharesStudent || sharesRoom) {
+        ids.add(a.id)
+        ids.add(b.id)
+      }
+    }
   }
   return ids
 })
 const conflictCount = computed(() => conflictedIds.value.size)
+const formConflictMessages = computed(() => {
+  if (!form.value.className || form.value.startTime >= form.value.endTime) return []
+  return conflictItems.value
+    .filter((item) => item.status !== '已取消' && item.id !== editingId.value)
+    .filter(
+      (item) =>
+        item.weekday === form.value.weekday &&
+        timesOverlap(form.value.startTime, form.value.endTime, item.startTime, item.endTime),
+    )
+    .flatMap((item) => {
+      const messages: string[] = []
+      if (item.teacher === form.value.teacher)
+        messages.push(`教师 ${item.teacher} 与「${item.className}」时间重叠`)
+      const sharesRoom = item.campus === form.value.campus && item.room === form.value.room
+      if (sharesRoom) messages.push(`教室 ${item.room} 与「${item.className}」时间重叠`)
+      const overlapIds = form.value.studentIds.filter((id) => scheduleStudentIds(item).includes(id))
+      for (const id of overlapIds) {
+        const student = store.state.students.find((candidate) => candidate.id === id)
+        messages.push(`学生 ${student?.name ?? id} 与「${item.className}」时间重叠`)
+      }
+      return messages
+    })
+})
 const activeCount = computed(() => list.value.filter((s) => s.status === '待上课').length)
 const columns: TableColumn[] = [
   { key: 'course', title: '课程 / 班级', width: '210px' },
@@ -166,7 +248,12 @@ async function loadItems() {
   loading.value = true
   pageError.value = ''
   try {
-    list.value = await getScheduleItems(filters.value)
+    const [filteredItems, allItems] = await Promise.all([
+      getScheduleItems(filters.value),
+      getScheduleItems(),
+    ])
+    list.value = filteredItems
+    conflictItems.value = allItems
   } catch (error) {
     pageError.value = error instanceof Error ? error.message : '排课数据加载失败'
   } finally {
@@ -209,13 +296,32 @@ function openCreate() {
 function openEdit(item: ScheduleItem) {
   editingId.value = item.id
   formError.value = ''
-  form.value = { ...item }
+  form.value = {
+    ...item,
+    studentIds: item.studentIds?.length ? item.studentIds : enrolledStudentIds(item.className),
+  }
   modalOpen.value = true
 }
 
 function toDraft(item: ScheduleItem): ScheduleDraft {
   const { id: _id, ...draft } = item
-  return draft
+  return { ...draft, studentIds: item.studentIds ?? [] }
+}
+
+function timesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string) {
+  return aStart < bEnd && bStart < aEnd
+}
+
+function scheduleStudentIds(item: ScheduleItem) {
+  return item.studentIds?.length ? item.studentIds : enrolledStudentIds(item.className)
+}
+
+function updateFormClass(className: string) {
+  form.value.studentIds = enrolledStudentIds(className)
+}
+
+function updateAutoClass(className: string) {
+  autoForm.value.studentIds = enrolledStudentIds(className)
 }
 
 async function save() {
@@ -225,6 +331,10 @@ async function save() {
   }
   if (form.value.startTime >= form.value.endTime) {
     formError.value = '结束时间必须晚于开始时间'
+    return
+  }
+  if (formConflictMessages.value.length > 0) {
+    formError.value = `当前时段存在资源冲突：${formConflictMessages.value.join('；')}`
     return
   }
   saving.value = true
@@ -237,7 +347,12 @@ async function save() {
     store.toast(editingId.value ? '排课已更新' : '排课已创建')
     await loadItems()
   } catch (error) {
-    formError.value = error instanceof Error ? error.message : '保存排课失败'
+    formError.value =
+      error instanceof ScheduleApiError && error.status === 409
+        ? `服务端检测到排课冲突：${error.message}`
+        : error instanceof Error
+          ? error.message
+          : '保存排课失败'
   } finally {
     saving.value = false
   }
@@ -280,7 +395,12 @@ async function generatePlan() {
   try {
     autoResult.value = await autoPlanSchedule(autoForm.value)
   } catch (error) {
-    autoError.value = error instanceof Error ? error.message : '自动排课失败'
+    autoError.value =
+      error instanceof ScheduleApiError && error.status === 409
+        ? `服务端检测到排课冲突：${error.message}`
+        : error instanceof Error
+          ? error.message
+          : '自动排课失败'
   } finally {
     planning.value = false
   }
@@ -291,12 +411,22 @@ async function savePlan() {
   planning.value = true
   autoError.value = ''
   try {
-    await createScheduleBatch(autoResult.value.items)
+    await createScheduleBatch(
+      autoResult.value.items.map((item) => ({
+        ...item,
+        studentIds: autoForm.value.studentIds,
+      })),
+    )
     autoModalOpen.value = false
     store.toast('排课方案已保存')
     await loadItems()
   } catch (error) {
-    autoError.value = error instanceof Error ? error.message : '保存排课方案失败'
+    autoError.value =
+      error instanceof ScheduleApiError && error.status === 409
+        ? `服务端检测到排课冲突：${error.message}`
+        : error instanceof Error
+          ? error.message
+          : '保存排课方案失败'
   } finally {
     planning.value = false
   }
@@ -448,7 +578,13 @@ async function savePlan() {
       <p v-if="formError" class="notice notice--error" role="alert">{{ formError }}</p>
       <div class="form-grid">
         <UiSelect v-model="form.course" label="课程" :options="courseOptions" required />
-        <UiSelect v-model="form.className" label="班级" :options="classOptions" required />
+        <UiSelect
+          v-model="form.className"
+          label="班级"
+          :options="classOptions"
+          required
+          @update:model-value="updateFormClass"
+        />
         <UiSelect v-model="form.teacher" label="教师" :options="teacherOptions" />
         <UiSelect v-model="form.room" label="教室" :options="roomOptions" />
         <UiSelect v-model="form.campus" label="校区" :options="campusOptions" />
@@ -458,9 +594,26 @@ async function savePlan() {
         <UiSelect v-model="form.type" label="课程类型" :options="typeOptions" />
         <UiSelect v-model="form.status" label="状态" :options="statusOptions" />
       </div>
+      <fieldset v-if="form.className" class="student-picker">
+        <legend>本次参与学生（默认选择该班在读学生）</legend>
+        <label v-for="student in formStudentOptions" :key="student.id">
+          <input v-model="form.studentIds" type="checkbox" :value="student.id" />
+          {{ student.name }}
+        </label>
+        <p v-if="formStudentOptions.length === 0" class="text-muted">该班暂无在读学生</p>
+      </fieldset>
+      <div v-if="formConflictMessages.length" class="form-conflicts" role="status">
+        <strong>发现可能的时间重叠（仍可提交，由服务端最终校验）：</strong>
+        <ul>
+          <li v-for="message in formConflictMessages" :key="message">{{ message }}</li>
+        </ul>
+        <span>仅时间区间相交时提示，前一节结束时间等于后一节开始时间可排。</span>
+      </div>
       <template #footer>
         <UiButton variant="outline" @click="modalOpen = false">取消</UiButton>
-        <UiButton :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存排课' }}</UiButton>
+        <UiButton :disabled="saving || formConflictMessages.length > 0" @click="save">{{
+          saving ? '保存中…' : '保存排课'
+        }}</UiButton>
       </template>
     </UiModal>
 
@@ -468,7 +621,12 @@ async function savePlan() {
       <p v-if="autoError" class="notice notice--error" role="alert">{{ autoError }}</p>
       <div class="form-grid">
         <UiSelect v-model="autoForm.course" label="课程" :options="courseOptions" />
-        <UiSelect v-model="autoForm.className" label="班级" :options="classOptions" />
+        <UiSelect
+          v-model="autoForm.className"
+          label="班级"
+          :options="classOptions"
+          @update:model-value="updateAutoClass"
+        />
         <UiSelect v-model="autoForm.teacher" label="教师" :options="teacherOptions" />
         <UiSelect v-model="autoForm.room" label="教室" :options="roomOptions" />
         <UiSelect v-model="autoForm.campus" label="校区" :options="campusOptions" />
@@ -484,6 +642,14 @@ async function savePlan() {
           <input v-model="autoForm.weekdays" type="checkbox" :value="day" />
           {{ day }}
         </label>
+      </fieldset>
+      <fieldset v-if="autoForm.className" class="student-picker">
+        <legend>自动排课参与学生（默认选择该班在读学生）</legend>
+        <label v-for="student in autoStudentOptions" :key="student.id">
+          <input v-model="autoForm.studentIds" type="checkbox" :value="student.id" />
+          {{ student.name }}
+        </label>
+        <p v-if="autoStudentOptions.length === 0" class="text-muted">该班暂无在读学生</p>
       </fieldset>
       <div v-if="autoResult" class="plan-result">
         <UiTag :tone="autoResult.complete ? 'success' : 'warning'">
@@ -695,6 +861,52 @@ async function savePlan() {
   margin: 18px 0;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-sm);
+}
+
+.student-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px;
+  margin: 18px 0;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+}
+
+.student-picker legend {
+  padding: 0 6px;
+  color: var(--gray-700);
+  font-size: 13px;
+}
+
+.student-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--gray-700);
+}
+
+.student-picker input {
+  accent-color: var(--brand-600);
+}
+
+.form-conflicts {
+  padding: 12px;
+  margin-top: 16px;
+  border-radius: var(--radius-sm);
+  color: var(--danger-strong);
+  background: var(--danger-soft);
+  font-size: 13px;
+}
+
+.form-conflicts ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.form-conflicts span {
+  color: var(--gray-600);
 }
 
 .weekday-picker legend {

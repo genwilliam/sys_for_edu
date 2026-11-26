@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -9,19 +10,77 @@ import StatCard from '@/components/StatCard.vue'
 import LineChart from '@/components/charts/LineChart.vue'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import BarChart from '@/components/charts/BarChart.vue'
-import { revenueTrend, courseDistribution, campusDistribution } from '@/data/mock'
 
 const store = useAppStore()
 
-const attendanceTrend = [
-  { label: '周一', value: 96 },
-  { label: '周二', value: 93 },
-  { label: '周三', value: 97 },
-  { label: '周四', value: 91 },
-  { label: '周五', value: 95 },
-  { label: '周六', value: 98 },
-  { label: '周日', value: 92 },
-]
+const currentMonth = new Date().toISOString().slice(0, 7)
+const monthlyRevenue = computed(() =>
+  store.state.orders
+    .filter(({ date, payStatus }) => date.startsWith(currentMonth) && payStatus === '已支付')
+    .reduce((total, { amount }) => total + amount, 0),
+)
+const monthlyClassCount = computed(
+  () => store.state.attendance.filter(({ date }) => date.startsWith(currentMonth)).length,
+)
+const monthlyNewStudents = computed(
+  () => store.state.students.filter(({ enrollDate }) => enrollDate.startsWith(currentMonth)).length,
+)
+const paymentRate = computed(() => {
+  if (!store.state.orders.length) return 0
+  const paidOrders = store.state.orders.filter(({ payStatus }) => payStatus === '已支付').length
+  return Number(((paidOrders / store.state.orders.length) * 100).toFixed(1))
+})
+const revenueTrend = computed(() => {
+  const totals = new Map<number, number>()
+  for (const order of store.state.orders) {
+    if (order.payStatus !== '已支付') continue
+    const month = Number(order.date.slice(5, 7))
+    totals.set(month, (totals.get(month) ?? 0) + order.amount)
+  }
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1
+    return { label: `${month}月`, value: Math.round((totals.get(month) ?? 0) / 1000) }
+  })
+})
+const courseDistribution = computed(() => {
+  const totals = new Map<string, number>()
+  for (const course of store.state.courses) {
+    totals.set(course.category, (totals.get(course.category) ?? 0) + 1)
+  }
+  return [...totals].map(([label, value], index) => ({
+    label,
+    value,
+    color: ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#f43f5e'][index % 5]!,
+  }))
+})
+const campusDistribution = computed(() =>
+  store.state.campuses.map(({ name }) => {
+    const campusName = name.replace(/^(总校区|海淀校区|丰台校区|通州校区) · /, '')
+    return {
+      label: campusName,
+      value: store.state.students.filter((student) => student.campus === campusName).length,
+    }
+  }),
+)
+const attendanceTrend = computed(() => {
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return weekdays
+    .slice(1)
+    .concat(weekdays[0]!)
+    .map((label, index) => {
+      const records = store.state.attendance.filter((record) => {
+        const date = new Date(`${record.date}T00:00:00`)
+        return date.getDay() === (index + 1) % 7 && record.status !== '请假'
+      })
+      const presentCount = records.filter(
+        ({ status }) => status === '出勤' || status === '迟到',
+      ).length
+      return {
+        label,
+        value: records.length ? Number(((presentCount / records.length) * 100).toFixed(1)) : 0,
+      }
+    })
+})
 
 const reports = [
   { name: '月度营收报表', dimension: '按校区 / 按月', updated: '2025-06-15 10:30', type: '财务' },
@@ -50,21 +109,32 @@ const typeTone: Record<string, 'brand' | 'info' | 'success' | 'warning'> = {
     <section class="report-stats">
       <StatCard
         label="本月营收"
-        :value="482600"
+        :value="monthlyRevenue"
         unit="元"
         icon="wallet"
         tone="brand"
-        :trend="15.8"
+        :trend="0"
       />
-      <StatCard label="本月课消" :value="1248" unit="节" icon="layers" tone="info" :trend="8.2" />
-      <StatCard label="新增学员" :value="96" unit="人" icon="users" tone="success" :trend="12.4" />
       <StatCard
-        label="续费率"
-        :value="78.5"
+        label="本月考勤记录"
+        :value="monthlyClassCount"
+        unit="条"
+        icon="layers"
+        tone="info"
+      />
+      <StatCard
+        label="新增学员"
+        :value="monthlyNewStudents"
+        unit="人"
+        icon="users"
+        tone="success"
+      />
+      <StatCard
+        label="订单支付率"
+        :value="paymentRate"
         unit="%"
         icon="trending-up"
         tone="warning"
-        :trend="3.1"
       />
     </section>
 

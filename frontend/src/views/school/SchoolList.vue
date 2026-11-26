@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Campus } from '@/types'
-import { campuses } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Campus[]>(JSON.parse(JSON.stringify(campuses)) as Campus[])
+const list = computed(() => store.state.campuses)
 const keyword = ref('')
 const statusFilter = ref('')
 const page = ref(1)
@@ -70,7 +69,7 @@ const form = ref<Campus>({
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `C${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     address: '',
     principal: '',
@@ -89,23 +88,27 @@ function openEdit(row: Campus) {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写校区名称', 'warning')
     return
   }
   if (editing.value) {
-    Object.assign(editing.value, form.value)
+    if (!(await store.updateBusinessRecord('campuses', editing.value.id, form.value))) return
     store.toast('校区信息已更新')
   } else {
-    list.value.unshift({ ...form.value, classroomCount: Number(form.value.classroomCount) || 0 })
+    const created = await store.createBusinessRecord('campuses', {
+      ...form.value,
+      classroomCount: Number(form.value.classroomCount) || 0,
+    })
+    if (!created) return
     store.toast('校区创建成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: Campus) {
-  list.value = list.value.filter((c) => c.id !== row.id)
+async function remove(row: Campus) {
+  if (!(await store.deleteBusinessRecord('campuses', row.id))) return
   store.toast('已删除该校区', 'info')
 }
 </script>

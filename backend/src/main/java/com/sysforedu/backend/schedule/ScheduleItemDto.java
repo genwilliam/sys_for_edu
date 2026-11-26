@@ -2,6 +2,7 @@ package com.sysforedu.backend.schedule;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import java.time.LocalTime;
+import java.util.List;
 
 public record ScheduleItemDto(
         String id,
@@ -14,5 +15,6 @@ public record ScheduleItemDto(
         @JsonFormat(pattern = "HH:mm") LocalTime startTime,
         @JsonFormat(pattern = "HH:mm") LocalTime endTime,
         String type,
-        String status) {
+        String status,
+        List<String> studentIds) {
 }

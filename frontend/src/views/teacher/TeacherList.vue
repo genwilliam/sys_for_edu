@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Teacher } from '@/types'
-import { teachers } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Teacher[]>(JSON.parse(JSON.stringify(teachers)) as Teacher[])
+const list = computed(() => store.state.teachers)
 const keyword = ref('')
 const subjectFilter = ref('')
 const page = ref(1)
@@ -86,7 +85,7 @@ const form = ref<Teacher>({
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `T${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     gender: 'female',
     phone: '',
@@ -107,23 +106,23 @@ function openEdit(row: Teacher) {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写教师姓名', 'warning')
     return
   }
   if (editing.value) {
-    Object.assign(editing.value, form.value)
+    if (!(await store.updateBusinessRecord('teachers', editing.value.id, form.value))) return
     store.toast('教师信息已更新')
   } else {
-    list.value.unshift({ ...form.value })
+    if (!(await store.createBusinessRecord('teachers', form.value))) return
     store.toast('教师添加成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: Teacher) {
-  list.value = list.value.filter((t) => t.id !== row.id)
+async function remove(row: Teacher) {
+  if (!(await store.deleteBusinessRecord('teachers', row.id))) return
   store.toast('已移除该教师', 'info')
 }
 </script>

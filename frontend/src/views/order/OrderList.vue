@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { Order, PayStatus } from '@/types'
-import { orders } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import StatCard from '@/components/StatCard.vue'
 
 const store = useAppStore()
 
-const list = ref<Order[]>(JSON.parse(JSON.stringify(orders)) as Order[])
+const list = computed(() => store.state.orders)
 const keyword = ref('')
 const payFilter = ref('')
 const page = ref(1)
@@ -83,7 +82,7 @@ const form = ref<Order>({
 
 function openCreate() {
   form.value = {
-    id: `O${String(Date.now()).slice(-6)}`,
+    id: '',
     orderNo: `SF${Date.now()}`,
     student: '',
     course: '',
@@ -96,12 +95,18 @@ function openCreate() {
   modalOpen.value = true
 }
 
-function save() {
+async function save() {
   if (!form.value.student.trim() || !form.value.course.trim()) {
     store.toast('请填写学员与课程', 'warning')
     return
   }
-  list.value.unshift({ ...form.value, amount: Number(form.value.amount) || 0 })
+  if (
+    !(await store.createBusinessRecord('orders', {
+      ...form.value,
+      amount: Number(form.value.amount) || 0,
+    }))
+  )
+    return
   modalOpen.value = false
   store.toast('订单创建成功')
 }

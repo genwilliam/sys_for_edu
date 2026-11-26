@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Role } from '@/types'
-import { roles } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -13,7 +12,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<Role[]>(JSON.parse(JSON.stringify(roles)) as Role[])
+const list = computed(() => store.state.roles)
 const modalOpen = ref(false)
 const editing = ref<Role | null>(null)
 
@@ -66,24 +65,37 @@ function togglePermission(p: string) {
   else selected.value.splice(i, 1)
 }
 
-function save() {
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写角色名称', 'warning')
     return
   }
   const permissions = selected.value.includes('全部权限') ? ['全部权限'] : [...selected.value]
   if (editing.value) {
-    Object.assign(editing.value, form.value, { permissions })
+    if (
+      !(await store.updateBusinessRecord('roles', editing.value.id, {
+        ...form.value,
+        permissions,
+      }))
+    )
+      return
     store.toast('角色权限已更新')
   } else {
-    list.value.unshift({ ...form.value, permissions, memberCount: 0 })
+    if (
+      !(await store.createBusinessRecord('roles', {
+        ...form.value,
+        permissions,
+        memberCount: 0,
+      }))
+    )
+      return
     store.toast('角色创建成功')
   }
   modalOpen.value = false
 }
 
-function remove(role: Role) {
-  list.value = list.value.filter((r) => r.id !== role.id)
+async function remove(role: Role) {
+  if (!(await store.deleteBusinessRecord('roles', role.id))) return
   store.toast('已删除该角色', 'info')
 }
 </script>

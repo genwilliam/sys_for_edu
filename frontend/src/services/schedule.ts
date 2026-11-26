@@ -1,6 +1,7 @@
 import type { ScheduleItem } from '@/types'
+import { getAuthToken } from '@/services/auth'
 
-export type ScheduleDraft = Omit<ScheduleItem, 'id'>
+export type ScheduleDraft = Omit<ScheduleItem, 'id' | 'studentIds'> & { studentIds: string[] }
 
 export interface ScheduleFilters {
   campus?: string
@@ -23,6 +24,7 @@ export interface AutoPlanRequest {
   startTime: string
   endTime: string
   type: ScheduleItem['type']
+  studentIds: string[]
 }
 
 export interface AutoPlanResponse {
@@ -46,6 +48,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/schedule-items${path}`, {
     ...init,
     headers: {
+      ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },

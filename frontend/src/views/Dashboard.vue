@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import UiCard from '@/components/ui/UiCard.vue'
 import UiButton from '@/components/ui/UiButton.vue'
@@ -9,13 +9,8 @@ import StatCard from '@/components/StatCard.vue'
 import LineChart from '@/components/charts/LineChart.vue'
 import DonutChart from '@/components/charts/DonutChart.vue'
 import BarChart from '@/components/charts/BarChart.vue'
-import {
-  dashboardStats,
-  revenueTrend,
-  courseDistribution,
-  campusDistribution,
-  scheduleItems,
-} from '@/data/mock'
+import { getScheduleItems } from '@/services/schedule'
+import type { ScheduleItem } from '@/types'
 
 defineOptions({ name: 'DashboardView' })
 
@@ -37,7 +32,75 @@ const today = new Date().toLocaleDateString('zh-CN', {
   weekday: 'long',
 })
 
-const todayClasses = scheduleItems.filter((s) => s.status === '待上课').slice(0, 5)
+const todayClasses = ref<ScheduleItem[]>([])
+const dashboardStats = computed(() => {
+  const activeAttendance = store.state.attendance.filter(({ status }) => status !== '请假')
+  const presentAttendance = activeAttendance.filter(
+    ({ status }) => status === '出勤' || status === '迟到',
+  )
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  return {
+    studentTotal: store.state.students.filter(({ status }) => status === '在读').length,
+    studentGrowth: 0,
+    teacherTotal: store.state.teachers.filter(({ status }) => status === 'active').length,
+    teacherGrowth: 0,
+    classTotal: store.state.classGroups.filter(({ status }) => status === '开课中').length,
+    classGrowth: 0,
+    monthRevenue: store.state.orders
+      .filter(({ date, payStatus }) => date.startsWith(currentMonth) && payStatus === '已支付')
+      .reduce((total, { amount }) => total + amount, 0),
+    revenueGrowth: 0,
+    attendanceRate: activeAttendance.length
+      ? Number(((presentAttendance.length / activeAttendance.length) * 100).toFixed(1))
+      : 0,
+    pendingOrders: store.state.orders.filter(({ payStatus }) => payStatus === '待支付').length,
+  }
+})
+const revenueTrend = computed(() => {
+  const totals = new Map<number, number>()
+  for (const order of store.state.orders) {
+    if (order.payStatus !== '已支付') continue
+    const month = Number(order.date.slice(5, 7))
+    totals.set(month, (totals.get(month) ?? 0) + order.amount)
+  }
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1
+    return { label: `${month}月`, value: Math.round((totals.get(month) ?? 0) / 1000) }
+  })
+})
+const courseDistribution = computed(() => {
+  const palette = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#f43f5e']
+  const totals = new Map<string, number>()
+  for (const course of store.state.courses) {
+    totals.set(course.category, (totals.get(course.category) ?? 0) + 1)
+  }
+  return [...totals].map(([label, value], index) => ({
+    label,
+    value,
+    color: palette[index % palette.length]!,
+  }))
+})
+const campusDistribution = computed(() =>
+  store.state.campuses.map(({ name }) => {
+    const campusName = name.replace(/^(总校区|海淀校区|丰台校区|通州校区) · /, '')
+    return {
+      label: campusName,
+      value: store.state.students.filter((student) => student.campus === campusName).length,
+    }
+  }),
+)
+
+onMounted(async () => {
+  const weekday = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date().getDay()]
+  try {
+    const items = await getScheduleItems()
+    todayClasses.value = items
+      .filter((item) => item.status === '待上课' && item.weekday === weekday)
+      .slice(0, 5)
+  } catch (error) {
+    store.toast(error instanceof Error ? error.message : '今日课表加载失败', 'error')
+  }
+})
 
 const statusTone: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'brand'> = {
   待上课: 'brand',
@@ -53,10 +116,13 @@ const statusTone: Record<string, 'success' | 'warning' | 'info' | 'danger' | 'br
       <div class="banner__content">
         <p class="banner__date">{{ today }}</p>
         <h2 class="banner__title">{{ greeting }}，{{ store.state.user?.name }} 👋</h2>
-        <p class="banner__desc">今日共有 8 节课程待上课，6 名新学员待跟进，祝您工作顺利。</p>
+        <p class="banner__desc">
+          今日有 {{ todayClasses.length }} 节课程待上课，当前登记
+          {{ store.state.students.length }} 名学员。
+        </p>
         <div class="banner__actions">
-          <UiButton icon="plus" @click="store.toast('新建学生表单已准备')">新建学生</UiButton>
-          <UiButton variant="outline" icon="calendar" @click="store.toast('进入排课管理')">
+          <UiButton icon="plus" @click="store.navigate('/student')">新建学生</UiButton>
+          <UiButton variant="outline" icon="calendar" @click="store.navigate('/schedule')">
             新建排课
           </UiButton>
         </div>

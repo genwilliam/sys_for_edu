@@ -6,6 +6,7 @@ import SchoolList from '@/views/school/SchoolList.vue'
 import TeacherList from '@/views/teacher/TeacherList.vue'
 import StudentList from '@/views/student/StudentList.vue'
 import ClassList from '@/views/class/ClassList.vue'
+import ClassDetail from '@/views/class/ClassDetail.vue'
 import CourseList from '@/views/course/CourseList.vue'
 import ClassroomList from '@/views/classroom/ClassroomList.vue'
 import ScheduleBoard from '@/views/schedule/ScheduleBoard.vue'
@@ -16,6 +17,8 @@ import ReportCenter from '@/views/report/ReportCenter.vue'
 import UserList from '@/views/system/UserList.vue'
 import RoleList from '@/views/system/RoleList.vue'
 import PersonDetail from '@/views/person/PersonDetail.vue'
+import MyWork from '@/views/MyWork.vue'
+import AccountManagement from '@/views/system/AccountManagement.vue'
 
 export interface MenuItem {
   path: string
@@ -80,7 +83,17 @@ export const menuGroups: MenuGroup[] = [
     items: [
       { path: '/system/users', title: '用户管理', icon: 'user-cog', component: UserList },
       { path: '/system/roles', title: '角色权限', icon: 'shield', component: RoleList },
+      {
+        path: '/system/accounts',
+        title: '账号审核与请假',
+        icon: 'user-check',
+        component: AccountManagement,
+      },
     ],
+  },
+  {
+    label: '个人工作台',
+    items: [{ path: '/my-work', title: '我的课表与请假', icon: 'calendar', component: MyWork }],
   },
 ]
 
@@ -97,11 +110,25 @@ for (const group of menuGroups) {
 }
 
 export function getView(path: string): Component {
+  if (/^\/class\/[^/]+$/.test(path)) return ClassDetail
   if (/^\/(teacher|student)\/[^/]+$/.test(path)) return PersonDetail
   return viewMap[path] ?? LoginView
 }
 
+export function getMenuGroups(role?: string): MenuGroup[] {
+  if (role === 'TEACHER' || role === 'STUDENT') {
+    return menuGroups.filter((group) => group.label === '个人工作台')
+  }
+  return menuGroups.filter((group) => group.label !== '个人工作台')
+}
+
 export function getMeta(path: string): RouteMeta {
+  if (path === '/my-work') {
+    return { title: '我的课表与请假', group: '个人工作台', icon: 'calendar' }
+  }
+  if (path.startsWith('/class/')) {
+    return { title: '班级详情', group: '班级管理', icon: 'layers' }
+  }
   if (path.startsWith('/teacher/')) {
     return { title: '教师档案', group: '教师管理', icon: 'graduation-cap' }
   }

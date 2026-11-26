@@ -1,23 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import PageHeader from '@/components/PageHeader.vue'
 import UiButton from '@/components/ui/UiButton.vue'
 import UiEmpty from '@/components/ui/UiEmpty.vue'
 import UiTag from '@/components/ui/UiTag.vue'
-import {
-  attendanceRecords,
-  classGroups,
-  courses,
-  orders,
-  scheduleItems,
-  students,
-  teachers,
-  visits,
-} from '@/data/mock'
+import { getScheduleItems } from '@/services/schedule'
 import { useAppStore } from '@/stores/app'
-import type { TabItem, Teacher } from '@/types'
+import type { ScheduleItem, TabItem, Teacher } from '@/types'
 
 const store = useAppStore()
+const scheduleItems = ref<ScheduleItem[]>([])
+const scheduleError = ref('')
 const route = computed(() => {
   const [kind, id = ''] = store.state.currentPath.slice(1).split('/')
   return {
@@ -32,7 +25,7 @@ const teacher = computed<Teacher | null>(() => {
   if (selected?.kind === 'teacher' && selected.person.id === route.value.id) {
     return selected.person
   }
-  return teachers.find((item) => item.id === route.value.id) ?? null
+  return store.state.teachers.find((item) => item.id === route.value.id) ?? null
 })
 
 const student = computed(() => {
@@ -41,7 +34,7 @@ const student = computed(() => {
   if (selected?.kind === 'student' && selected.person.id === route.value.id) {
     return selected.person
   }
-  return students.find((item) => item.id === route.value.id) ?? null
+  return store.state.students.find((item) => item.id === route.value.id) ?? null
 })
 
 const personName = computed(() => teacher.value?.name ?? student.value?.name ?? '')
@@ -72,29 +65,51 @@ const studentTabs: TabItem[] = [
 
 const tabs = computed(() => (isTeacher.value ? teacherTabs : studentTabs))
 const relatedSchedule = computed(() =>
-  scheduleItems.filter((item) =>
+  scheduleItems.value.filter((item) =>
     isTeacher.value
       ? item.teacher === personName.value
-      : item.className === student.value?.className,
+      : item.studentIds?.includes(student.value?.id ?? '') ||
+        item.className === student.value?.className,
   ),
 )
 const relatedCourses = computed(() => {
-  if (teacher.value) return courses.filter((item) => item.teacher === teacher.value?.name)
+  if (teacher.value)
+    return store.state.courses.filter((item) => item.teacher === teacher.value?.name)
   const courseNames = new Set(relatedSchedule.value.map((item) => item.course))
-  return courses.filter((item) => courseNames.has(item.name))
+  return store.state.courses.filter((item) => courseNames.has(item.name))
 })
 const relatedClasses = computed(() =>
   isTeacher.value
-    ? classGroups.filter((item) => item.teacher === personName.value)
-    : classGroups.filter((item) => item.name === student.value?.className),
+    ? store.state.classGroups.filter((item) => item.teacher === personName.value)
+    : store.state.classGroups.filter(
+        (item) =>
+          student.value !== null && store.studentsInClass(item.id).includes(student.value.id),
+      ),
 )
+const studentsByClass = (classId: string) => {
+  const memberIds = store.studentsInClass(classId)
+  return store.state.students.filter((item) => memberIds.includes(item.id))
+}
 const relatedLessons = computed(() =>
-  attendanceRecords.filter((item) =>
+  store.state.attendance.filter((item) =>
     isTeacher.value ? item.teacher === personName.value : item.student === personName.value,
   ),
 )
-const relatedOrders = computed(() => orders.filter((item) => item.student === personName.value))
-const relatedVisits = computed(() => visits.filter((item) => item.student === personName.value))
+const relatedOrders = computed(() =>
+  store.state.orders.filter((item) => item.student === personName.value),
+)
+const relatedVisits = computed(() =>
+  store.state.visits.filter((item) => item.student === personName.value),
+)
+
+onMounted(async () => {
+  try {
+    scheduleItems.value = await getScheduleItems()
+  } catch (error) {
+    scheduleError.value = error instanceof Error ? error.message : '档案课表加载失败'
+    store.toast(scheduleError.value, 'error')
+  }
+})
 
 const fields = computed(() => {
   if (teacher.value) {
@@ -253,6 +268,23 @@ function returnToList() {
               <p>{{ group.course }} · {{ group.grade }}</p>
               <p>{{ group.campus }} · {{ group.room }}</p>
               <p>{{ group.studentCount }}/{{ group.capacity }} 人 · {{ group.schedule }}</p>
+              <p v-if="isTeacher && teacher">
+                任课教师：{{ teacher.name }} · 联系方式：{{ teacher.phone }}
+              </p>
+              <p v-else-if="!isTeacher">
+                任课教师：{{ group.teacher }} · 联系方式：
+                {{
+                  store.state.teachers.find((item) => item.name === group.teacher)?.phone ??
+                  '未登记'
+                }}
+              </p>
+              <p v-if="isTeacher && studentsByClass(group.id).length">
+                班级学员：{{
+                  studentsByClass(group.id)
+                    .map((item) => item.name)
+                    .join('、')
+                }}
+              </p>
             </article>
           </div>
           <UiEmpty v-else text="暂无班级记录" description="当前演示数据中没有关联班级" />

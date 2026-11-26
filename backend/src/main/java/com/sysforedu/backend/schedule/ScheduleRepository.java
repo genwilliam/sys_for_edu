@@ -3,9 +3,11 @@ package com.sysforedu.backend.schedule;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Time;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,7 +28,8 @@ public class ScheduleRepository {
             rs.getTime("start_time").toLocalTime(),
             rs.getTime("end_time").toLocalTime(),
             rs.getString("type"),
-            rs.getString("status"));
+            rs.getString("status"),
+            List.of());
 
     public ScheduleRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -47,20 +50,21 @@ public class ScheduleRepository {
         addFilter(sql, args, "weekday", weekday);
         addFilter(sql, args, "status", status);
         sql.append(" ORDER BY weekday, start_time, id");
-        return jdbc.query(sql.toString(), rowMapper, args.toArray());
+        return withStudents(jdbc.query(sql.toString(), rowMapper, args.toArray()));
     }
 
     public List<ScheduleItemDto> findAllActive() {
-        return jdbc.query("SELECT " + SELECT_COLUMNS + " FROM schedule_items WHERE status <> '已取消'",
-                rowMapper);
+        return withStudents(jdbc.query("SELECT " + SELECT_COLUMNS
+                + " FROM schedule_items WHERE status <> '已取消'", rowMapper));
     }
 
     public ScheduleItemDto findById(String id) {
-        return jdbc.query("SELECT " + SELECT_COLUMNS + " FROM schedule_items WHERE id = ?",
-                        rowMapper, id)
+        return withStudents(jdbc.query("SELECT " + SELECT_COLUMNS + " FROM schedule_items WHERE id = ?",
+                        rowMapper, id))
                 .stream().findFirst().orElse(null);
     }
 
+    @Transactional
     public ScheduleItemDto insert(ScheduleRequests.Create create) {
         String id = UUID.randomUUID().toString();
         jdbc.update("""
@@ -71,9 +75,11 @@ public class ScheduleRepository {
                 id, create.course(), create.className(), create.teacher(), create.room(), create.campus(),
                 create.weekday(), Time.valueOf(create.startTime()), Time.valueOf(create.endTime()), create.type(),
                 normalizedStatus(create.status()));
+        replaceStudents(id, create.studentIds());
         return findById(id);
     }
 
+    @Transactional
     public void update(String id, ScheduleRequests.Create create) {
         jdbc.update("""
                         UPDATE schedule_items
@@ -84,6 +90,7 @@ public class ScheduleRepository {
                 create.course(), create.className(), create.teacher(), create.room(), create.campus(),
                 create.weekday(), Time.valueOf(create.startTime()), Time.valueOf(create.endTime()), create.type(),
                 normalizedStatus(create.status()), id);
+        replaceStudents(id, create.studentIds());
     }
 
     public void cancel(String id) {
@@ -92,6 +99,31 @@ public class ScheduleRepository {
 
     private static String normalizedStatus(String status) {
         return status == null || status.isBlank() ? "待上课" : status;
+    }
+
+    private void replaceStudents(String scheduleItemId, List<String> studentIds) {
+        jdbc.update("DELETE FROM schedule_item_students WHERE schedule_item_id = ?", scheduleItemId);
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String studentId : studentIds) {
+            if (studentId != null) {
+                normalized.add(studentId.trim());
+            }
+        }
+        for (String studentId : normalized) {
+            jdbc.update("INSERT INTO schedule_item_students (schedule_item_id, student_id) VALUES (?, ?)",
+                    scheduleItemId, studentId);
+        }
+    }
+
+    private List<ScheduleItemDto> withStudents(List<ScheduleItemDto> items) {
+        return items.stream().map(item -> {
+            List<String> studentIds = jdbc.query(
+                    "SELECT student_id FROM schedule_item_students WHERE schedule_item_id = ? ORDER BY student_id",
+                    (rs, rowNum) -> rs.getString("student_id"), item.id());
+            return new ScheduleItemDto(item.id(), item.course(), item.className(), item.teacher(), item.room(),
+                    item.campus(), item.weekday(), item.startTime(), item.endTime(), item.type(), item.status(),
+                    studentIds);
+        }).toList();
     }
 
     private static void addFilter(StringBuilder sql, List<Object> args, String column, String value) {

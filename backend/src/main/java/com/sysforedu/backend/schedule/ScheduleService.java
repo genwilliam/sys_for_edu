@@ -1,5 +1,7 @@
 package com.sysforedu.backend.schedule;
 
+import com.sysforedu.backend.auth.AuthContext;
+import com.sysforedu.backend.auth.AuthPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,7 +23,19 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public List<ScheduleItemDto> list(String campus, String course, String teacher,
                                       String room, String weekday, String status) {
-        return repository.findAll(campus, course, teacher, room, weekday, status);
+        AuthPrincipal principal = AuthContext.current();
+        if (principal == null || principal.isAdmin()) {
+            return repository.findAll(campus, course, teacher, room, weekday, status);
+        }
+        if ("TEACHER".equals(principal.role())) {
+            if (teacher != null && !teacher.equals(principal.name())) return List.of();
+            return repository.findAll(campus, course, principal.name(), room, weekday, status);
+        }
+        if ("STUDENT".equals(principal.role())) {
+            return repository.findAll(campus, course, teacher, room, weekday, status).stream()
+                    .filter(item -> item.studentIds().contains(principal.personId())).toList();
+        }
+        return List.of();
     }
 
     @Transactional
@@ -108,7 +122,7 @@ public class ScheduleService {
                 LocalTime end = start.plusMinutes(request.durationMinutes());
                 ScheduleRequests.Create proposed = new ScheduleRequests.Create(
                         request.course(), request.className(), request.teacher(), request.room(), request.campus(),
-                        weekday, start, end, request.type(), "待上课");
+                        weekday, start, end, request.type(), "待上课", normalizedStudentIds(request.studentIds()));
                 String conflict = conflictDescription(proposed, null, occupied);
                 if (conflict == null) {
                     candidates.add(proposed);
@@ -174,8 +188,16 @@ public class ScheduleService {
             }
             List<String> reasons = new ArrayList<>();
             if (existing.teacher().equals(candidate.teacher())) reasons.add("教师 " + candidate.teacher());
-            if (existing.room().equals(candidate.room())) reasons.add("教室 " + candidate.room());
+            if (existing.campus().equals(candidate.campus())
+                    && existing.room().equals(candidate.room())) {
+                reasons.add("教室 " + candidate.room());
+            }
             if (existing.className().equals(candidate.className())) reasons.add("班级 " + candidate.className());
+            List<String> sharedStudents = new ArrayList<>(existing.studentIds());
+            sharedStudents.retainAll(normalizedStudentIds(candidate.studentIds()));
+            if (!sharedStudents.isEmpty()) {
+                reasons.add("学生 " + String.join("、", sharedStudents));
+            }
             if (!reasons.isEmpty()) {
                 return "排课冲突：" + candidate.weekday() + " " + candidate.startTime() + "-" + candidate.endTime()
                         + " 与原排课 " + existing.id() + "（" + existing.course() + "，" + existing.className()
@@ -189,7 +211,18 @@ public class ScheduleService {
     private static ScheduleItemDto asScheduleItem(ScheduleRequests.Create create) {
         return new ScheduleItemDto(null, create.course(), create.className(), create.teacher(), create.room(),
                 create.campus(), create.weekday(), create.startTime(), create.endTime(), create.type(),
-                effectiveStatus(create));
+                effectiveStatus(create), normalizedStudentIds(create.studentIds()));
+    }
+
+    private static List<String> normalizedStudentIds(List<String> studentIds) {
+        if (studentIds == null) {
+            return List.of();
+        }
+        return studentIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 
     private static String effectiveStatus(ScheduleRequests.Create create) {

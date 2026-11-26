@@ -1,5 +1,7 @@
 package com.sysforedu.backend.schedule;
 
+import com.sysforedu.backend.auth.AuthException;
+import com.sysforedu.backend.business.BusinessDataException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -20,6 +22,16 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ScheduleException.class)
     public org.springframework.http.ResponseEntity<ApiError> handleSchedule(ScheduleException exception) {
+        return response(exception.status(), exception.status().getReasonPhrase(), exception.getMessage());
+    }
+
+    @ExceptionHandler(BusinessDataException.class)
+    public org.springframework.http.ResponseEntity<ApiError> handleBusinessData(BusinessDataException exception) {
+        return response(exception.status(), exception.status().getReasonPhrase(), exception.getMessage());
+    }
+
+    @ExceptionHandler(AuthException.class)
+    public org.springframework.http.ResponseEntity<ApiError> handleAuth(AuthException exception) {
         return response(exception.status(), exception.status().getReasonPhrase(), exception.getMessage());
     }
 

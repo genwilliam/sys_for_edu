@@ -1,5 +1,7 @@
 package com.sysforedu.backend.schedule;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sysforedu.backend.auth.TestAdminMockMvc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -38,8 +41,16 @@ class ScheduleControllerTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    @Autowired
+    private WebApplicationContext context;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @BeforeEach
-    void clearItems() {
+    void clearItems() throws Exception {
+        mockMvc = TestAdminMockMvc.withAdmin(context, mockMvc, objectMapper);
+        jdbc.update("DELETE FROM schedule_item_students");
         jdbc.update("DELETE FROM schedule_items");
     }
 
@@ -66,6 +77,16 @@ class ScheduleControllerTest {
     }
 
     @Test
+    void roomConflictsAreScopedToTheSameCampus() throws Exception {
+        create(item("校区 A 课程", "周一", "09:00", "10:00", "老师甲", "教室 101", "班级甲"))
+                .andExpect(status().isCreated());
+
+        create(itemAtCampus("校区 B 课程", "周一", "09:00", "10:00",
+                "老师乙", "教室 101", "班级乙", "校区B"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     void canceledItemsDoNotReserveResourcesAndUpdateExcludesItself() throws Exception {
         String id = create(item("待取消", "周二", "09:00", "10:00", "老师乙", "教室乙", "班级乙"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
@@ -87,6 +108,66 @@ class ScheduleControllerTest {
     }
 
     @Test
+    void sharedStudentsConflictAcrossDifferentClassesAndStudentIdsAreNormalized() throws Exception {
+        create(itemWithStudents("学生课", "周一", "09:00", "10:00", "老师甲", "教室甲", "班级甲",
+                "[\"student-1\",\" student-1 \",\"student-2\"]"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.studentIds", hasSize(2)));
+        create(itemWithStudents("另一班", "周一", "09:30", "10:30", "老师乙", "教室乙", "班级乙",
+                "[\"student-2\"]"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("学生 student-2")));
+    }
+
+    @Test
+    void nullStudentIdsBecomeEmptyAndBlankStudentIdsAreRejected() throws Exception {
+        String nullStudents = """
+                {"course":"空学生","className":"班级","teacher":"老师","room":"教室","campus":"校区A",
+                 "weekday":"周一","startTime":"09:00","endTime":"10:00","type":"常规课","studentIds":null}
+                """;
+        create(nullStudents)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.studentIds", hasSize(0)));
+
+        create(itemWithStudents("无效学生", "周二", "09:00", "10:00",
+                "老师", "教室", "班级", "[\"  \"]"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateCanKeepItsOwnStudentsAndAdjacentStudentLessonsAreAllowed() throws Exception {
+        String response = create(itemWithStudents("更新课", "周一", "09:00", "10:00", "老师甲", "教室甲", "班级甲",
+                "[\"student-1\"]")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).get("id").asText();
+
+        mockMvc.perform(put("/api/schedule-items/{id}", id)
+                        .contentType(APPLICATION_JSON)
+                        .content(itemWithStudents("更新课", "周一", "09:00", "10:00",
+                                "老师乙", "教室乙", "班级乙", "[\"student-1\"]")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentIds[0]", is("student-1")));
+        create(itemWithStudents("相邻学生课", "周一", "10:00", "11:00",
+                "老师丙", "教室丙", "班级丙", "[\"student-1\"]"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void canceledScheduleRetainsStudentSnapshotButReleasesStudent() throws Exception {
+        String response = create(itemWithStudents("待取消", "周二", "09:00", "10:00",
+                "老师甲", "教室甲", "班级甲", "[\"student-1\"]"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).get("id").asText();
+
+        mockMvc.perform(patch("/api/schedule-items/{id}/cancel", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.studentIds[0]", is("student-1")));
+        create(itemWithStudents("接替课", "周二", "09:30", "10:30",
+                "老师乙", "教室乙", "班级乙", "[\"student-1\"]"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     void batchConflictRollsBackAllRows() throws Exception {
         create(item("已有课", "周三", "09:00", "10:00", "老师丙", "教室丙", "班级丙"))
                 .andExpect(status().isCreated());
@@ -99,6 +180,25 @@ class ScheduleControllerTest {
         mockMvc.perform(post("/api/schedule-items/batch").contentType(APPLICATION_JSON).content(batch))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message", containsString("已有课")));
+        mockMvc.perform(get("/api/schedule-items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    void batchStudentConflictRollsBackAllRows() throws Exception {
+        create(itemWithStudents("已有学生课", "周三", "09:00", "10:00",
+                "老师丙", "教室丙", "班级丙", "[\"student-1\"]"))
+                .andExpect(status().isCreated());
+        String batch = """
+                {"items":[
+                  {"course":"新建一","className":"新班一","teacher":"新老师","room":"新教室","campus":"校区A","weekday":"周四","startTime":"09:00","endTime":"10:00","type":"常规课","studentIds":["student-2"]},
+                  {"course":"冲突项","className":"其他班","teacher":"其他老师","room":"其他教室","campus":"校区A","weekday":"周三","startTime":"09:30","endTime":"10:30","type":"补课","studentIds":["student-1"]}
+                ]}
+                """;
+        mockMvc.perform(post("/api/schedule-items/batch").contentType(APPLICATION_JSON).content(batch))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", containsString("student-1")));
         mockMvc.perform(get("/api/schedule-items"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)));
@@ -145,7 +245,25 @@ class ScheduleControllerTest {
                 .andExpect(jsonPath("$.items[0].weekday", is("周一")))
                 .andExpect(jsonPath("$.items[0].startTime", containsString("10:00")))
                 .andExpect(jsonPath("$.items[1].weekday", is("周二")))
+                .andExpect(jsonPath("$.items[0].studentIds", hasSize(0)))
                 .andExpect(jsonPath("$.explanation", containsString("每 30 分钟")));
+    }
+
+    @Test
+    void autoPlanCarriesStudentsAndAvoidsTheirExistingTime() throws Exception {
+        create(itemWithStudents("学生已排", "周一", "09:00", "10:00",
+                "其他老师", "其他教室", "其他班", "[\"student-1\"]"))
+                .andExpect(status().isCreated());
+        String request = """
+                {"course":"规划课","className":"新班","teacher":"新老师","room":"新教室","campus":"校区A",
+                 "weeklySessions":1,"durationMinutes":60,"weekdays":["周一"],
+                 "startTime":"09:00","endTime":"11:00","type":"常规课","studentIds":["student-1","student-1"]}
+                """;
+        mockMvc.perform(post("/api/schedule-items/auto-plan").contentType(APPLICATION_JSON).content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].startTime", containsString("10:00")))
+                .andExpect(jsonPath("$.items[0].studentIds", hasSize(1)))
+                .andExpect(jsonPath("$.items[0].studentIds[0]", is("student-1")));
     }
 
     @Test
@@ -216,9 +334,22 @@ class ScheduleControllerTest {
 
     private static String item(String course, String weekday, String start, String end,
                                String teacher, String room, String className) {
+        return itemAtCampus(course, weekday, start, end, teacher, room, className, "校区A");
+    }
+
+    private static String itemAtCampus(String course, String weekday, String start, String end,
+                                       String teacher, String room, String className, String campus) {
+        return """
+                {"course":"%s","className":"%s","teacher":"%s","room":"%s","campus":"%s",
+                 "weekday":"%s","startTime":"%s","endTime":"%s","type":"常规课"}
+                """.formatted(course, className, teacher, room, campus, weekday, start, end);
+    }
+
+    private static String itemWithStudents(String course, String weekday, String start, String end,
+                                           String teacher, String room, String className, String studentIds) {
         return """
                 {"course":"%s","className":"%s","teacher":"%s","room":"%s","campus":"校区A",
-                 "weekday":"%s","startTime":"%s","endTime":"%s","type":"常规课"}
-                """.formatted(course, className, teacher, room, weekday, start, end);
+                 "weekday":"%s","startTime":"%s","endTime":"%s","type":"常规课","studentIds":%s}
+                """.formatted(course, className, teacher, room, weekday, start, end, studentIds);
     }
 }

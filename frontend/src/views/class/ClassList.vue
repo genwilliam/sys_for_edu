@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ClassGroup } from '@/types'
-import { classGroups } from '@/data/mock'
 import { useAppStore } from '@/stores/app'
 import PageHeader from '@/components/PageHeader.vue'
 import UiCard from '@/components/ui/UiCard.vue'
@@ -17,7 +16,7 @@ import UiIcon from '@/components/ui/UiIcon.vue'
 
 const store = useAppStore()
 
-const list = ref<ClassGroup[]>(JSON.parse(JSON.stringify(classGroups)) as ClassGroup[])
+const list = computed(() => store.state.classGroups)
 const keyword = ref('')
 const statusFilter = ref('')
 const page = ref(1)
@@ -71,7 +70,7 @@ const form = ref<ClassGroup>({
   course: '',
   teacher: '',
   studentCount: 0,
-  capacity: 20,
+  capacity: 32,
   room: '',
   status: '未开班',
   schedule: '',
@@ -80,14 +79,14 @@ const form = ref<ClassGroup>({
 function openCreate() {
   editing.value = null
   form.value = {
-    id: `K${String(Date.now()).slice(-6)}`,
+    id: '',
     name: '',
     grade: '小学 1-3 年级',
     campus: '朝阳中心',
     course: '',
     teacher: '',
     studentCount: 0,
-    capacity: 20,
+    capacity: 32,
     room: '',
     status: '未开班',
     schedule: '',
@@ -101,30 +100,39 @@ function openEdit(row: ClassGroup) {
   modalOpen.value = true
 }
 
-function save() {
+function openDetail(row: ClassGroup) {
+  store.navigate(`/class/${encodeURIComponent(row.id)}`)
+}
+
+async function save() {
   if (!form.value.name.trim()) {
     store.toast('请填写班级名称', 'warning')
     return
   }
   if (editing.value) {
-    Object.assign(editing.value, form.value, {
-      capacity: Number(form.value.capacity) || 20,
+    const updated = await store.updateBusinessRecord('classes', editing.value.id, {
+      ...form.value,
+      capacity: Number(form.value.capacity) || 32,
       studentCount: Number(form.value.studentCount) || 0,
     })
+    if (!updated) return
     store.toast('班级信息已更新')
   } else {
-    list.value.unshift({
+    const created = await store.createBusinessRecord('classes', {
       ...form.value,
-      capacity: Number(form.value.capacity) || 20,
+      capacity: Number(form.value.capacity) || 32,
       studentCount: Number(form.value.studentCount) || 0,
     })
+    if (!created) return
+    store.state.classStudentAssignments[created.id] = []
     store.toast('班级创建成功')
   }
   modalOpen.value = false
 }
 
-function remove(row: ClassGroup) {
-  list.value = list.value.filter((c) => c.id !== row.id)
+async function remove(row: ClassGroup) {
+  if (!(await store.deleteBusinessRecord('classes', row.id))) return
+  delete store.state.classStudentAssignments[row.id]
   store.toast('已删除该班级', 'info')
 }
 </script>
@@ -152,12 +160,14 @@ function remove(row: ClassGroup) {
 
       <UiTable :columns="columns" :data="paged">
         <template #cell-name="{ row }">
-          <div class="cell-primary">{{ row.name }}</div>
+          <button type="button" class="class-name-link" @click="openDetail(row)">
+            {{ row.name }}
+          </button>
           <div class="cell-sub">{{ row.grade }} · {{ row.campus }}</div>
         </template>
         <template #cell-studentCount="{ row }">
-          <span :class="{ 'is-full': row.studentCount >= row.capacity }">
-            {{ row.studentCount }} / {{ row.capacity }} 人
+          <span :class="{ 'is-full': store.studentsInClass(row.id).length >= row.capacity }">
+            {{ store.studentsInClass(row.id).length }} / {{ row.capacity }} 人
           </span>
         </template>
         <template #cell-status="{ row }">
@@ -229,5 +239,16 @@ function remove(row: ClassGroup) {
 .is-full {
   color: var(--danger-strong);
   font-weight: 600;
+}
+
+.class-name-link {
+  padding: 0;
+  color: var(--brand-700);
+  font-weight: 600;
+  text-align: left;
+}
+
+.class-name-link:hover {
+  text-decoration: underline;
 }
 </style>
