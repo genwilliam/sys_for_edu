@@ -27,10 +27,6 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (principal == null) {
             throw new AuthException(HttpStatus.UNAUTHORIZED, "登录已失效，请重新登录");
         }
-        if (principal.mustChangePassword() && !path.equals("/api/auth/change-password")
-                && !path.equals("/api/auth/logout") && !path.equals("/api/auth/session")) {
-            throw new AuthException(HttpStatus.FORBIDDEN, "请先修改演示账号初始密码");
-        }
         if (path.startsWith("/api/auth/accounts/") || "/api/auth/accounts".equals(path)) {
             requireAdmin(principal);
         }

@@ -12,13 +12,12 @@ const username = ref('admin')
 const password = ref('Admin@123')
 const remember = ref(true)
 const loading = ref(false)
-const mode = ref<'login' | 'register' | 'change-password'>('login')
+const mode = ref<'login' | 'register'>('login')
 const registerRole = ref<'TEACHER' | 'STUDENT'>('STUDENT')
 const personId = ref('')
 const phone = ref('')
 const registerUsername = ref('')
 const registerPassword = ref('')
-const newPassword = ref('')
 
 const features = [
   { icon: 'calendar', title: '智能排课', desc: '按教师、教室、课程多维排课，自动检测资源冲突' },
@@ -35,11 +34,6 @@ async function submit() {
   const user = await store.login(username.value.trim(), password.value, remember.value)
   loading.value = false
   if (!user) return
-  if (user.mustChangePassword) {
-    mode.value = 'change-password'
-    store.toast('演示账号首次登录，请先修改初始密码', 'warning')
-    return
-  }
   store.toast('登录成功，欢迎回来！')
 }
 
@@ -69,20 +63,6 @@ async function submitRegistration() {
   } finally {
     loading.value = false
   }
-}
-
-async function submitPasswordChange() {
-  if (newPassword.value.length < 8) {
-    store.toast('新密码至少需要 8 位', 'warning')
-    return
-  }
-  loading.value = true
-  const success = await store.changeAccountPassword(newPassword.value)
-  loading.value = false
-  if (!success) return
-  mode.value = 'login'
-  password.value = ''
-  newPassword.value = ''
 }
 </script>
 
@@ -115,22 +95,10 @@ async function submitPasswordChange() {
     <div class="login__panel">
       <div class="login__form-wrap">
         <h2 class="login__form-title">
-          {{
-            mode === 'register'
-              ? '注册教师 / 学生账号'
-              : mode === 'change-password'
-                ? '修改初始密码'
-                : '欢迎登录'
-          }}
+          {{ mode === 'register' ? '注册教师 / 学生账号' : '欢迎登录' }}
         </h2>
         <p class="login__form-sub">
-          {{
-            mode === 'register'
-              ? '使用档案编号与登记手机号验证本人身份'
-              : mode === 'change-password'
-                ? '为保护账号安全，请先设置新密码'
-                : '请输入您的账号信息'
-          }}
+          {{ mode === 'register' ? '使用档案编号与登记手机号验证本人身份' : '请输入您的账号信息' }}
         </p>
 
         <form v-if="mode === 'login'" class="login__form" @submit.prevent="submit">
@@ -224,31 +192,11 @@ async function submitPasswordChange() {
           <button class="login__secondary" type="button" @click="mode = 'login'">返回登录</button>
         </form>
 
-        <form v-else class="login__form" @submit.prevent="submitPasswordChange">
-          <div class="login__field">
-            <label class="login__label" for="new-password">新密码（至少 8 位）</label>
-            <div class="login__input">
-              <UiIcon name="lock" :size="18" />
-              <input
-                id="new-password"
-                v-model="newPassword"
-                type="password"
-                minlength="8"
-                required
-              />
-            </div>
-          </div>
-          <button class="login__submit" type="submit" :disabled="loading">
-            {{ loading ? '保存中…' : '修改密码' }}
-          </button>
-        </form>
-
         <div v-if="mode === 'login'" class="login__demo">
-          <p><b>本地演示账号（首次登录需修改密码）</b></p>
+          <p><b>本地演示账号</b></p>
           <p>管理员：admin / Admin@123</p>
           <p>教师：teacher / Teacher@123</p>
           <p>学生：student / Student@123</p>
-          <p class="login__demo-tip">请勿将演示密码用于公网环境。</p>
         </div>
       </div>
     </div>

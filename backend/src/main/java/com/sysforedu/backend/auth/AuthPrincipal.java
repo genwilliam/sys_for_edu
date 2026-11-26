@@ -5,8 +5,7 @@ public record AuthPrincipal(
         String role,
         String personId,
         String name,
-        String campus,
-        boolean mustChangePassword) {
+        String campus) {
     public boolean isAdmin() {
         return "ADMIN".equals(role);
     }

@@ -62,14 +62,13 @@ public class AuthService {
         if (token == null || token.isBlank()) return null;
         List<Account> accounts = jdbc.query("""
                 SELECT account.username, account.password_salt, account.password_hash,
-                       account.account_role, account.person_id, account.status,
-                       account.must_change_password
+                       account.account_role, account.person_id, account.status
                 FROM auth_sessions session
                 JOIN auth_accounts account ON account.username = session.username
                 WHERE session.token_hash = ? AND session.expires_at > CURRENT_TIMESTAMP
                 """, (rs, rowNum) -> new Account(rs.getString("username"), rs.getString("password_salt"),
                 rs.getString("password_hash"), rs.getString("account_role"), rs.getString("person_id"),
-                rs.getString("status"), rs.getBoolean("must_change_password")), tokenHash(token));
+                rs.getString("status")), tokenHash(token));
         if (accounts.isEmpty() || !"ACTIVE".equals(accounts.get(0).status())) return null;
         return principal(accounts.get(0));
     }
@@ -84,20 +83,6 @@ public class AuthService {
         if (token != null && !token.isBlank()) {
             jdbc.update("DELETE FROM auth_sessions WHERE token_hash = ?", tokenHash(token));
         }
-    }
-
-    @Transactional
-    public void changePassword(AuthPrincipal principal, String password) {
-        if (password.length() < 8) {
-            throw new AuthException(HttpStatus.BAD_REQUEST, "新密码至少需要 8 位");
-        }
-        PasswordParts parts = passwordParts(password);
-        jdbc.update("""
-                UPDATE auth_accounts
-                SET password_salt = ?, password_hash = ?, must_change_password = FALSE
-                WHERE username = ?
-                """, parts.salt(), parts.hash(), principal.username());
-        jdbc.update("DELETE FROM auth_sessions WHERE username = ?", principal.username());
     }
 
     @Transactional
@@ -130,8 +115,8 @@ public class AuthService {
         String status = "TEACHER".equals(accountRole) ? "PENDING" : "ACTIVE";
         jdbc.update("""
                 INSERT INTO auth_accounts
-                (username, password_salt, password_hash, account_role, person_id, status, must_change_password)
-                VALUES (?, ?, ?, ?, ?, ?, FALSE)
+                (username, password_salt, password_hash, account_role, person_id, status)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """, request.username(), password.salt(), password.hash(), accountRole, request.personId(), status);
         return principal(findAccount(request.username()).orElseThrow());
     }
@@ -180,32 +165,31 @@ public class AuthService {
         PasswordParts password = passwordParts(rawPassword);
         jdbc.update("""
                 INSERT INTO auth_accounts
-                (username, password_salt, password_hash, account_role, person_id, status, must_change_password)
-                VALUES (?, ?, ?, ?, ?, ?, TRUE)
+            (username, password_salt, password_hash, account_role, person_id, status)
+            VALUES (?, ?, ?, ?, ?, ?)
                 """, username, password.salt(), password.hash(), role, personId, status);
     }
 
     private java.util.Optional<Account> findAccount(String username) {
         return jdbc.query("""
                 SELECT username, password_salt, password_hash, account_role, person_id,
-                       status, must_change_password
+                       status
                 FROM auth_accounts WHERE username = ?
                 """, (rs, rowNum) -> new Account(rs.getString("username"), rs.getString("password_salt"),
                 rs.getString("password_hash"), rs.getString("account_role"), rs.getString("person_id"),
-                rs.getString("status"), rs.getBoolean("must_change_password")), username).stream().findFirst();
+                rs.getString("status")), username).stream().findFirst();
     }
 
     private AuthPrincipal principal(Account account) {
         if ("ADMIN".equals(account.role())) {
-            return new AuthPrincipal(account.username(), account.role(), null, "系统管理员", "全部校区",
-                    account.mustChangePassword());
+            return new AuthPrincipal(account.username(), account.role(), null, "系统管理员", "全部校区");
         }
         String domain = "TEACHER".equals(account.role()) ? "teachers" : "students";
         Map<String, Object> profile = businessData.findById(domain, account.personId())
                 .orElseThrow(() -> new AuthException(HttpStatus.FORBIDDEN, "账号关联的档案不存在"));
         String campus = String.valueOf(profile.getOrDefault("campus", ""));
         return new AuthPrincipal(account.username(), account.role(), account.personId(),
-                String.valueOf(profile.get("name")), campus, account.mustChangePassword());
+                String.valueOf(profile.get("name")), campus);
     }
 
     private PasswordParts passwordParts(String password) {
@@ -249,7 +233,7 @@ public class AuthService {
     }
 
     private record Account(String username, String salt, String passwordHash, String role,
-                           String personId, String status, boolean mustChangePassword) {
+                           String personId, String status) {
     }
 
     private record AccountRow(String username, String role, String personId, String status,

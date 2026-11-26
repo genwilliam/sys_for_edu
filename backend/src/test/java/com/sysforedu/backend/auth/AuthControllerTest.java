@@ -43,7 +43,20 @@ class AuthControllerTest {
     @BeforeEach
     void authenticateAdmin() throws Exception {
         adminMvc = TestAdminMockMvc.withAdmin(context, mockMvc, objectMapper);
-        adminToken = loginToken("admin", "Admin@1234");
+        adminToken = loginToken("admin", "Admin@123");
+    }
+
+    @Test
+    void demoAccountCanUseTheSystemWithoutChangingItsPassword() throws Exception {
+        String response = mockMvc.perform(post("/api/auth/login").contentType(APPLICATION_JSON).content("""
+                        {"username":"admin","password":"Admin@123"}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.mustChangePassword").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+        String token = objectMapper.readTree(response).get("token").asText();
+        mockMvc.perform(get("/api/data/students").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -23,7 +23,6 @@ import {
 } from '@/services/businessData'
 import {
   clearAuthToken,
-  changePassword as changePasswordRequest,
   getAuthToken,
   getSession,
   login as loginRequest,
@@ -93,7 +92,7 @@ export function useAppStore() {
   function setSessionUser(user: SessionUser) {
     state.user = user
     state.isLoggedIn = true
-    state.currentPath = user.mustChangePassword || user.role === 'ADMIN' ? '/dashboard' : '/my-work'
+    state.currentPath = user.role === 'ADMIN' ? '/dashboard' : '/my-work'
   }
 
   async function restoreSession() {
@@ -105,7 +104,7 @@ export function useAppStore() {
     try {
       const user = await getSession()
       setSessionUser(user)
-      if (!user.mustChangePassword) await loadBusinessData()
+      await loadBusinessData()
     } catch {
       clearAuthToken()
       state.user = null
@@ -120,26 +119,11 @@ export function useAppStore() {
       const session = await loginRequest(username, password)
       setAuthToken(session.token, remember)
       setSessionUser(session.user)
-      if (!session.user.mustChangePassword) await loadBusinessData()
+      await loadBusinessData()
       return session.user
     } catch (error) {
       toast(error instanceof Error ? error.message : '登录失败', 'error')
       return null
-    }
-  }
-
-  async function changeAccountPassword(newPassword: string) {
-    try {
-      await changePasswordRequest(newPassword)
-      clearAuthToken()
-      state.user = null
-      state.isLoggedIn = false
-      state.currentPath = '/dashboard'
-      toast('密码已修改，请使用新密码重新登录')
-      return true
-    } catch (error) {
-      toast(error instanceof Error ? error.message : '密码修改失败', 'error')
-      return false
     }
   }
 
@@ -384,7 +368,6 @@ export function useAppStore() {
     loadBusinessData,
     restoreSession,
     login,
-    changeAccountPassword,
     createBusinessRecord,
     updateBusinessRecord,
     deleteBusinessRecord,

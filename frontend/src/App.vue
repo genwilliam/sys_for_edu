@@ -18,7 +18,7 @@ onMounted(() => void store.restoreSession())
     <div v-if="store.state.dataError" class="backend-error" role="alert">
       业务数据服务不可用，页面无法读取或保存数据：{{ store.state.dataError }}
     </div>
-    <LoginView v-if="!store.state.isLoggedIn || store.state.user?.mustChangePassword" />
+    <LoginView v-if="!store.state.isLoggedIn" />
     <MainLayout v-else />
   </template>
   <UiToastHost />

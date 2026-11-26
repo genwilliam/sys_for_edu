@@ -23,10 +23,6 @@ public final class AuthRequests {
             @NotBlank @Size(min = 8, max = 128) String password) {
     }
 
-    public record ChangePassword(
-            @NotBlank @Size(min = 8, max = 128) String newPassword) {
-    }
-
     public record ReviewAccount(@NotBlank @Pattern(regexp = "ACTIVE|DISABLED") String status) {
     }
 

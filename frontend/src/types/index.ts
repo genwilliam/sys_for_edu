@@ -150,7 +150,6 @@ export interface SessionUser {
   personId: string | null
   name: string
   campus: string
-  mustChangePassword: boolean
 }
 
 export interface AuthSession {

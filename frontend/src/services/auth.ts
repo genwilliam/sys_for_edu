@@ -72,13 +72,6 @@ export function registerAccount(input: {
   return authRequest('/register', { method: 'POST', body: JSON.stringify(input) })
 }
 
-export function changePassword(newPassword: string): Promise<void> {
-  return authRequest('/change-password', {
-    method: 'POST',
-    body: JSON.stringify({ newPassword }),
-  })
-}
-
 export function logoutRequest(): Promise<void> {
   return authRequest('/logout', { method: 'POST' })
 }

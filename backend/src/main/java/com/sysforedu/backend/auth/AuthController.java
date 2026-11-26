@@ -49,12 +49,6 @@ public class AuthController {
         authService.logout(authService.tokenFromAuthorization(request.getHeader("Authorization")));
     }
 
-    @PostMapping("/change-password")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void changePassword(@Valid @RequestBody AuthRequests.ChangePassword request) {
-        authService.changePassword(AuthContext.current(), request.newPassword());
-    }
-
     @GetMapping("/accounts")
     public List<AuthService.AccountView> accounts() {
         return authService.accounts();
